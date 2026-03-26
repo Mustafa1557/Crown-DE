@@ -1,3 +1,24 @@
+import http.server
+import socketserver
+import threading
+import os
+
+# كود عشان Render يفتكر إن البوت "موقع" ويشغله مجاناً
+def run_static_server():
+    port = int(os.environ.get("PORT", 8080))
+    handler = http.server.SimpleHTTPRequestHandler
+    with socketserver.TCPServer(("", port), handler) as httpd:
+        httpd.serve_forever()
+
+threading.Thread(target=run_static_server, daemon=True).start()
+
+# --- هنا يبدأ كود البوت القديم بتاعك ---
+import telebot
+# ... باقي الكود ...
+
+
+
+
 import telebot
 import yt_dlp
 import os
