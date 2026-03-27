@@ -6,81 +6,81 @@ import telebot
 import yt_dlp
 import re
 
-# --- 1. كود الاستمرارية لـ Render ---
+# --- 1. كود منع النوم (Keep-Alive Server) ---
 def run_static_server():
     port = int(os.environ.get("PORT", 8080))
     handler = http.server.SimpleHTTPRequestHandler
     try:
         with socketserver.TCPServer(("", port), handler) as httpd:
-            print(f"✅ Web Server running on port {port}")
+            print(f"🚀 Admin Server active on port {port}")
             httpd.serve_forever()
     except Exception as e:
-        print(f"Web server error: {e}")
+        print(f"Server error: {e}")
 
 threading.Thread(target=run_static_server, daemon=True).start()
 
-# --- 2. إعدادات البوت ---
+# --- 2. إعدادات الإدارة والبوت (ببياناتك يا مصطفى) ---
 TOKEN = "8283078572:AAH50vJAbO4ASd48jJx1TrjGlSmYk4_WQUU"
+ADMIN_ID = 8168754101
 bot = telebot.TeleBot(TOKEN)
 user_data = {} 
 
-# --- 3. محرك التحميل الذكي (Clean Engine) ---
+# --- 3. محرك التحميل (CrownEngine V4 Pro) ---
 class CrownEngine:
     def __init__(self, d_type='video'):
-        self.d_type = d_type
         self.opts = {
-            # اختيار الجودة وتحويل الصوت
             'format': 'best[ext=mp4]/best' if d_type == 'video' else 'bestaudio/best',
             'outtmpl': '/tmp/%(title)s.%(ext)s',
-            
-            # --- ميزات الفلترة والسرعة ---
             'quiet': True,
             'no_warnings': True,
-            'extract_flat': False, # لا يسحب قوائم التشغيل
-            'skip_download': False,
-            'noplaylist': True,    # تحميل فيديو واحد فقط حتى لو الرابط قائمة
-            
-            # --- خدعة تخطي الحظر ---
+            'noplaylist': True,
+            'extract_flat': False,
             'user_agent': 'com.zhiliaoapp.musically/2022405040 (Linux; U; Android 12; Pixel 6 Pro)',
             'referer': 'https://www.tiktok.com/',
-            'nocheckcertificate': True,
-            'ignoreerrors': False,
-            'retries': 5,            # إعادة محاولة 5 مرات عند انقطاع الاتصال
-            'socket_timeout': 20,    # مهلة الانتظار
-            
-            # --- تنظيف البيانات المرفقة ---
+            'retries': 5,
+            'socket_timeout': 25,
+            'ignoreerrors': True,
+            # تنظيف يوتيوب من الوصف والزحمة
             'writedescription': False,
             'writeinfojson': False,
-            'add_header': ['Accept-Language: en-US,en;q=0.9'],
         }
 
     def download(self, url):
         try:
             with yt_dlp.YoutubeDL(self.opts) as ydl:
-                # سحب المعلومات الأساسية فقط للسرعة
                 info = ydl.extract_info(url, download=True)
-                if info is None: return None
-                return ydl.prepare_filename(info)
-        except Exception as e:
-            print(f"❌ Error Detail: {e}")
+                return ydl.prepare_filename(info) if info else None
+        except:
             return None
 
-def is_valid_url(url):
-    pattern = r'(https?://)?(www\.)?(youtube\.com|youtu\.be|tiktok\.com|facebook\.com|instagram\.com|twitter\.com|x\.com|fb\.watch)/.+'
-    return re.match(pattern, url)
+# --- 4. نظام المراقبة والإشعارات ---
+def notify_admin(user_info, action_type, detail):
+    if ADMIN_ID != 0:
+        msg = (f"🔔 **إشعار إداري جديد**\n\n"
+               f"👤 المستخدم: {user_info.first_name}\n"
+               f"🆔 الآيدي: `{user_info.id}`\n"
+               f"⚙️ العملية: {action_type}\n"
+               f"🔗 التفاصيل: {detail}")
+        try:
+            bot.send_message(ADMIN_ID, msg, parse_mode="Markdown")
+        except:
+            print("❌ فشل إرسال إشعار للأدمن")
 
-# --- 4. إدارة الرسائل (Minimal UI) ---
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    uid = message.chat.id
-    bot.send_message(uid, "👑 **مرحباً بك في CrownDL Pro**\n\nأرسل الرابط وسأقوم بالتحميل مباشرة بدون تعقيدات!", parse_mode="Markdown")
+    notify_admin(message.from_user, "ضغط Start", "بدأ استخدام البوت")
+    bot.send_message(message.chat.id, "👑 **CrownDL V4 - نسخة الإدارة**\n\nأرسل رابط فيديو تيك توك أو يوتيوب وسأقوم بالتحميل فوراً!", parse_mode="Markdown")
 
 @bot.message_handler(func=lambda m: True)
-def handle_incoming_url(message):
-    uid = message.chat.id
+def handle_url(message):
     url = message.text
-    if is_valid_url(url):
-        user_data[uid] = {'last_url': url}
+    uid = message.chat.id
+    
+    if re.match(r'(https?://.+)', url):
+        # مراقبة الرابط المرسل
+        notify_admin(message.from_user, "أرسل رابطاً للتحميل", url)
+        
+        user_data[uid] = {'url': url}
         markup = telebot.types.InlineKeyboardMarkup()
         markup.add(
             telebot.types.InlineKeyboardButton("🎬 فيديو", callback_data="vid"),
@@ -88,18 +88,16 @@ def handle_incoming_url(message):
         )
         bot.reply_to(message, "⚙️ **اختر الصيغة:**", reply_markup=markup, parse_mode="Markdown")
     else:
-        bot.reply_to(message, "⚠️ الرابط غير مدعوم.")
+        bot.reply_to(message, "⚠️ الرابط غير مدعوم حالياً.")
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_query(call):
     uid = call.message.chat.id
-    url = user_data.get(uid, {}).get('last_url')
+    url = user_data.get(uid, {}).get('url')
     
-    if not url:
-        bot.answer_callback_query(call.id, "❌ انتهت الجلسة.")
-        return
+    if not url: return
 
-    bot.edit_message_text("⏳ جاري المعالجة... يرجى الانتظار", uid, call.message.message_id)
+    bot.edit_message_text("⏳ جاري التحميل... سأرسله لك فوراً", uid, call.message.message_id)
     
     file_type = 'audio' if call.data == 'aud' else 'video'
     engine = CrownEngine(file_type)
@@ -108,19 +106,19 @@ def handle_query(call):
     if file_path and os.path.exists(file_path):
         try:
             with open(file_path, 'rb') as f:
+                caption = "✅ تم التحميل بواسطة @CrownDL_bot"
                 if file_type == 'audio':
-                    bot.send_audio(uid, f, caption="✅ تم التحميل بنجاح بواسطة @CrownDL_bot")
+                    bot.send_audio(uid, f, caption=caption)
                 else:
-                    bot.send_video(uid, f, caption="✅ تم التحميل بنجاح بواسطة @CrownDL_bot")
-            bot.delete_message(uid, call.message.message_id) # مسح رسالة "جاري المعالجة"
+                    bot.send_video(uid, f, caption=caption)
+            bot.delete_message(uid, call.message.message_id)
         except Exception as e:
             bot.send_message(uid, f"❌ خطأ في الإرسال: {e}")
         finally:
-            if os.path.exists(file_path):
-                os.remove(file_path)
+            if os.path.exists(file_path): os.remove(file_path)
     else:
-        bot.send_message(uid, "❌ فشل التحميل. يرجى التأكد من أن الرابط عام وليس خاصاً.")
+        bot.send_message(uid, "❌ فشل التحميل. قد يكون الرابط خاصاً أو محظوراً.")
 
 if __name__ == "__main__":
-    print("✅ CrownDL Pro is LIVE now!")
+    print("✅ Admin System Online")
     bot.infinity_polling()
