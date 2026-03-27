@@ -10,9 +10,12 @@ import re
 def run_static_server():
     port = int(os.environ.get("PORT", 8080))
     handler = http.server.SimpleHTTPRequestHandler
-    with socketserver.TCPServer(("", port), handler) as httpd:
-        print(f"Serving on port {port}")
-        httpd.serve_forever()
+    try:
+        with socketserver.TCPServer(("", port), handler) as httpd:
+            print(f"✅ Web Server running on port {port}")
+            httpd.serve_forever()
+    except Exception as e:
+        print(f"Web server error: {e}")
 
 threading.Thread(target=run_static_server, daemon=True).start()
 
@@ -21,21 +24,24 @@ TOKEN = "8283078572:AAH50vJAbO4ASd48jJx1TrjGlSmYk4_WQUU"
 bot = telebot.TeleBot(TOKEN)
 user_data = {} 
 
-# --- 3. كلاس المحرك المطور (CrownEngine) ---
+# --- 3. كلاس المحرك المطور (CrownEngine) بخدعة الأندرويد ---
 class CrownEngine:
     def __init__(self, d_type='video'):
         self.d_type = d_type
-        # إعدادات احترافية لتخطي الحظر وتسهيل الرفع
         self.opts = {
-            # اختيار أفضل جودة فيديو مدموجة مسبقاً (عشان ما نحتاج ffmpeg للدمج)
             'format': 'best[ext=mp4]/best' if d_type == 'video' else 'bestaudio/best',
-            'outtmpl': '/tmp/%(title)s.%(ext)s', # الحفظ في مجلد /tmp الخاص بالسيرفرات
+            'outtmpl': '/tmp/%(title)s.%(ext)s',
             'quiet': True,
             'no_warnings': True,
-            # إضافة User-Agent حقيقي لتخطي حظر تيك توك وانستقرام
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            # 🛡️ الخدعة الكبرى: التظاهر بأننا تطبيق تيك توك أندرويد
+            'user_agent': 'com.zhiliaoapp.musically/2022405040 (Linux; U; Android 12; en_US; Pixel 6 Pro; Build/SQ3A.220705.003; Cronet/58.0.2991.0)',
+            'referer': 'https://www.tiktok.com/',
             'nocheckcertificate': True,
             'ignoreerrors': True,
+            'add_header': [
+                'Accept-Language: en-US,en;q=0.9',
+                'Range: bytes=0-',
+            ],
         }
 
     def download(self, url):
@@ -56,8 +62,7 @@ def is_valid_url(url):
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     uid = message.chat.id
-    welcome_text = "👑 **مرحباً بك في CrownDL V2**\n\nأرسل رابط فيديو (يوتيوب، تيك توك، فيسبوك) وسأقوم بتحميله فوراً!"
-    bot.send_message(uid, welcome_text, parse_mode="Markdown")
+    bot.send_message(uid, "👑 **CrownDL V3 - Android Identity Active**\n\nأرسل رابط تيك توك الآن لنختبر الخدعة!", parse_mode="Markdown")
 
 @bot.message_handler(func=lambda m: True)
 def handle_incoming_url(message):
@@ -83,7 +88,7 @@ def handle_query(call):
         bot.send_message(uid, "❌ انتهت الجلسة.")
         return
 
-    bot.edit_message_text("⏳ جاري التحميل... انتظر ثواني.", uid, call.message.message_id)
+    bot.edit_message_text("⏳ جاري محاولة خداع السيرفر والتحميل...", uid, call.message.message_id)
     
     file_type = 'audio' if call.data == 'aud' else 'video'
     engine = CrownEngine(file_type)
@@ -102,7 +107,7 @@ def handle_query(call):
             if os.path.exists(file_path):
                 os.remove(file_path)
     else:
-        bot.send_message(uid, "❌ فشل التحميل. قد يكون الفيديو خاصاً أو محظوراً.")
+        bot.send_message(uid, "❌ فشل التحميل. تيك توك لا يزال يكتشف السيرفر. سنحتاج لبروكسي في المرحلة القادمة!")
 
 if __name__ == "__main__":
     print("✅ CrownDL is LIVE now!")
