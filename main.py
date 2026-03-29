@@ -44,15 +44,13 @@ class CrownEngine:
 # --- 3. الأوامر والردود ---
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    # إشعار للأدمن (مصطفى)
+    # إشعار للأدمن
     try: bot.send_message(ADMIN_ID, f"👤 مستخدم جديد: {message.from_user.first_name}")
     except: pass
     
     welcome_text = (
-        "👑 **مرحباً بك في CrownDL (النسخة التجريبية)**\n\n"
-        "🚀 نحن الآن في مرحلة التطوير لتحسين السرعة وإضافة مزايا خرافية.\n\n"
-        "✅ **يدعم حالياً:** تحميل الروابط العامة (Public) من يوتيوب، تيك توك، وفيسبوك.\n\n"
-        "📥 أرسل الرابط الآن لنبدأ!"
+        "👑 **مرحباً بك في CrownDL**\n\n"
+        "أرسل لي رابط الفيديو من (YouTube, TikTok, Facebook) وسأقوم بتحميله لك فوراً."
     )
     bot.send_message(message.chat.id, welcome_text, parse_mode="Markdown")
 
@@ -90,13 +88,11 @@ def handle_query(call):
                 else: bot.send_video(uid, f, caption=caption)
             bot.delete_message(uid, call.message.message_id)
         except:
-            bot.send_message(uid, "❌ حدث خطأ غير متوقع أثناء إرسال الملف.")
+            bot.send_message(uid, "❌ حدث خطأ أثناء إرسال الملف.")
         finally:
             if os.path.exists(file_path): os.remove(file_path)
     else:
-        # 🛡️ العبارة اللي طلبتها يا مصطفى
-        error_msg = "🤝 اعتذر، لم يكتمل العمل على هذا النوع من الروابط الخاصة حالياً.. جرب ذلك قريباً!"
-        bot.edit_message_text(error_msg, uid, call.message.message_id)
+        bot.send_message(uid, "❌ فشل التحميل. الرابط قد يكون خاصاً أو غير مدعوم حالياً.")
 
 if __name__ == "__main__":
     print("✅ CrownDL Engine Online")
