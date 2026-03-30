@@ -1,99 +1,149 @@
-import http.server
-import socketserver
-import threading
 import os
 import telebot
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import yt_dlp
-import re
 
-# --- 1. خادم البقاء (Keep-Alive) ---
-def run_static_server():
-    port = int(os.environ.get("PORT", 8080))
-    handler = http.server.SimpleHTTPRequestHandler
-    try:
-        with socketserver.TCPServer(("", port), handler) as httpd:
-            httpd.serve_forever()
-    except: pass
-
-threading.Thread(target=run_static_server, daemon=True).start()
-
-# --- 2. الإعدادات (مصطفى) ---
-TOKEN = "8283078572:AAH50vJAbO4ASd48jJx1TrjGlSmYk4_WQUU"
-ADMIN_ID = 8168754101
+# 🔑 توكن البوت الخاص بك
+TOKEN = "7969192892:AAGv8G2n7jXo8oZlX_Wl_Q" # استبدله بالتوكن حقك لو اتغير
 bot = telebot.TeleBot(TOKEN)
-user_data = {} 
 
-class CrownEngine:
-    def __init__(self, d_type='video'):
-        self.opts = {
-            'format': 'best[ext=mp4]/best' if d_type == 'video' else 'bestaudio/best',
-            'outtmpl': '/tmp/%(title)s.%(ext)s',
-            'quiet': True,
-            'no_warnings': True,
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'referer': 'https://www.google.com/',
-        }
+# 📂 مجلد التحميلات المؤقت
+DOWNLOAD_FOLDER = "downloads"
+if not os.path.exists(DOWNLOAD_FOLDER):
+    os.makedirs(DOWNLOAD_FOLDER)
 
-    def download(self, url):
-        try:
-            with yt_dlp.YoutubeDL(self.opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                return ydl.prepare_filename(info) if info else None
-        except: return None
+print("🚀 [CrownDL Engine] - النظام قيد التشغيل والعبارات الأصلية مفعلة")
 
-# --- 3. الأوامر والردود ---
-@bot.message_handler(commands=['start'])
+# 1️⃣ دالة الترحيب بالعبارات الكاملة
+@bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-    # إشعار للأدمن
-    try: bot.send_message(ADMIN_ID, f"👤 مستخدم جديد: {message.from_user.first_name}")
-    except: pass
-    
     welcome_text = (
-        "👑 **مرحباً بك في CrownDL**\n\n"
-        "أرسل لي رابط الفيديو من (YouTube, TikTok, Facebook) وسأقوم بتحميله لك فوراً."
+        "👑 *مرحباً بك في بوت CrownDL المتقدم!* 👑\n\n"
+        "أنا هنا لمساعدتك في تحميل الفيديوهات والصوتيات من مختلف المنصات "
+        "بأعلى جودة ممكنة وبكل سهولة.\n\n"
+        "🌐 *المنصات المدعومة حالياً:* \n"
+        "• YouTube 🎥\n"
+        "• TikTok 🎵\n"
+        "• Facebook 👥\n"
+        "• Instagram 📸\n"
+        "• Twitter / X 🐦\n\n"
+        "💡 *طريقة الاستخدام:* \n"
+        "بكل بساطة، قم بنسخ رابط الفيديو من أي منصة وأرسله لي هنا في الشات، "
+        "وسأقوم بالباقي من أجلك! 🚀"
     )
-    bot.send_message(message.chat.id, welcome_text, parse_mode="Markdown")
+    bot.reply_to(message, welcome_text, parse_mode="Markdown")
 
-@bot.message_handler(func=lambda m: True)
-def handle_url(message):
-    url = message.text
-    if re.match(r'(https?://.+)', url):
-        user_data[message.chat.id] = {'url': url}
-        markup = telebot.types.InlineKeyboardMarkup()
-        markup.add(
-            telebot.types.InlineKeyboardButton("🎬 فيديو (MP4)", callback_data="vid"),
-            telebot.types.InlineKeyboardButton("🎵 صوت (MP3)", callback_data="aud")
+# 2️⃣ دالة استقبال الروابط وتحليلها
+@bot.message_handler(func=lambda message: True)
+def handle_message(message):
+    url = message.text.strip()
+    
+    # رسالة فحص الرابط (العبارة الطويلة)
+    checking_msg = bot.reply_to(
+        message, 
+        "🔍 *جاري فحص الرابط والتأكد من صحته...* \nيرجى الانتظار لحظات قليلة بينما أقوم بالاتصال بالسيرفر."
+    )
+    
+    # التحقق من أن النص عبارة عن رابط
+    if not url.startswith(('http://', 'https://')):
+        bot.edit_message_text(
+            "❌ *خطأ في الرابط!*\nعذراً، يبدو أن النص الذي أرسلته ليس رابطاً صالحاً. يرجى إرسال رابط فيديو صحيح يبدأ بـ http أو https.",
+            chat_id=message.chat.id,
+            message_id=checking_msg.message_id,
+            parse_mode="Markdown"
         )
-        bot.reply_to(message, "⚙️ **اختر الجودة المطلوبة:**", reply_markup=markup, parse_mode="Markdown")
-    else:
-        bot.reply_to(message, "⚠️ من فضلك أرسل رابطاً صحيحاً.")
+        return
 
+    # إنشاء الأزرار الشفافة
+    markup = InlineKeyboardMarkup()
+    btn_video = InlineKeyboardButton("🎬 تحميل كـ فيديو (Video)", callback_data=f"vid|{url}")
+    btn_audio = InlineKeyboardButton("🎵 تحميل كـ صوت (Audio MP3)", callback_data=f"aud|{url}")
+    markup.add(btn_video, btn_audio)
+    
+    # تعديل الرسالة وإظهار الخيارات
+    bot.edit_message_text(
+        "🎉 *تم التعرف على الرابط بنجاح!* 🎉\n\nالرجاء اختيار الصيغة التي ترغب في تحميل الملف بها من الخيارات أدناه 👇:",
+        chat_id=message.chat.id,
+        message_id=checking_msg.message_id,
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
+
+# 3️⃣ دالة معالجة ضغطات الأزرار والتحميل
 @bot.callback_query_handler(func=lambda call: True)
-def handle_query(call):
-    uid = call.message.chat.id
-    url = user_data.get(uid, {}).get('url')
-    if not url: return
-
-    bot.edit_message_text("⏳ جاري المعالجة... يرجى الانتظار", uid, call.message.message_id)
+def callback_query(call):
+    action, url = call.data.split('|')
+    chat_id = call.message.chat.id
     
-    file_type = 'audio' if call.data == 'aud' else 'video'
-    engine = CrownEngine(file_type)
-    file_path = engine.download(url)
+    # إشعار المستخدم ببدء العملية
+    status_msg = bot.send_message(
+        chat_id, 
+        "⏳ *جاري بدء عملية التحميل الآن...* \nقد يستغرق الأمر بعض الوقت اعتماداً على حجم الفيديو وسرعة السيرفر. يرجى عدم إرسال روابط أخرى حتى أنتهي."
+    )
     
-    if file_path and os.path.exists(file_path):
-        try:
-            with open(file_path, 'rb') as f:
-                caption = "✅ تم التحميل بواسطة @CrownDL_bot"
-                if file_type == 'audio': bot.send_audio(uid, f, caption=caption)
-                else: bot.send_video(uid, f, caption=caption)
-            bot.delete_message(uid, call.message.message_id)
-        except:
-            bot.send_message(uid, "❌ حدث خطأ أثناء إرسال الملف.")
-        finally:
-            if os.path.exists(file_path): os.remove(file_path)
+    # إعدادات yt-dlp بناءً على الاختيار
+    if action == "vid":
+        ydl_opts = {
+            'format': 'best',
+            'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(title)s.%(ext)s'),
+            'max_filesize': 50 * 1024 * 1024 # حد أقصى 50 ميجا عشان التليجرام
+        }
+        media_type = "فيديو"
     else:
-        bot.send_message(uid, "❌ فشل التحميل. الرابط قد يكون خاصاً أو غير مدعوم حالياً.")
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(title)s.%(ext)s'),
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+            'max_filesize': 50 * 1024 * 1024
+        }
+        media_type = "صوت"
 
-if __name__ == "__main__":
-    print("✅ CrownDL Engine Online")
-    bot.infinity_polling()
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # استخراج معلومات الفيديو والتحميل
+            info = ydl.extract_info(url, download=True)
+            file_path = ydl.prepare_filename(info)
+            
+            # في حالة الصوت، الامتداد بيتغير لـ mp3
+            if action == "aud":
+                base, ext = os.path.splitext(file_path)
+                file_path = base + ".mp3"
+                
+            title = info.get('title', 'ملف محمل')
+            
+            # تحديث الرسالة للإرسال
+            bot.edit_message_text(
+                f"📤 *اكتمل التحميل بنجاح!* \nجاري الآن رفع ملف الـ {media_type} الخاص بك إلى تيليجرام...",
+                chat_id=chat_id,
+                message_id=status_msg.message_id
+            )
+            
+            # إرسال الملف للتليجرام
+            with open(file_path, 'rb') as f:
+                if action == "vid":
+                    bot.send_video(chat_id, f, caption=f"👑 تم التحميل بواسطة بوت CrownDL\n📌 العنوان: {title}")
+                else:
+                    bot.send_audio(chat_id, f, caption=f"👑 تم التحميل بواسطة بوت CrownDL\n📌 العنوان: {title}")
+                    
+            # حذف الملف بعد الإرسال لتوفير مساحة السيرفر
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                
+            # حذف رسالة الحالات المؤقتة
+            bot.delete_message(chat_id, status_msg.message_id)
+            
+    except Exception as e:
+        print(f"Error: {e}")
+        bot.edit_message_text(
+            f"❌ *عذراً، حدث خطأ أثناء التحميل!*\n\nتأكد من أن الرابط يعمل بشكل صحيح، أو أن حجم الملف لا يتعدى حدود الرفع المسموحة (50 ميجابايت).\n\n_تفاصيل الخطأ: {str(e)[:100]}_",
+            chat_id=chat_id,
+            message_id=status_msg.message_id,
+            parse_mode="Markdown"
+        )
+
+# تشغيل البوت
+bot.infinity_polling()
