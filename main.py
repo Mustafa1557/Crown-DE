@@ -12,9 +12,9 @@ DOWNLOAD_FOLDER = "downloads"
 if not os.path.exists(DOWNLOAD_FOLDER):
     os.makedirs(DOWNLOAD_FOLDER)
 
-print("🚀 [CrownDL Engine] - النظام قيد التشغيل والعبارات الأصلية مفعلة")
+print("🚀 [CrownDL Engine] - النظام قيد التشغيل والعبارات الأصلية الطويلة مفعلة")
 
-# 1️⃣ دالة الترحيب بالعبارات الكاملة
+# 1️⃣ دالة الترحيب بالعبارات الكاملة الطويلة
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     welcome_text = (
@@ -33,12 +33,12 @@ def send_welcome(message):
     )
     bot.reply_to(message, welcome_text, parse_mode="Markdown")
 
-# 2️⃣ دالة استقبال الروابط وتحليلها
+# 2️⃣ دالة استقبال الروابط وتحليلها (بالعبارات المفصلة)
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
     url = message.text.strip()
     
-    # رسالة فحص الرابط (العبارة الطويلة)
+    # رسالة فحص الرابط الطويلة
     checking_msg = bot.reply_to(
         message, 
         "🔍 *جاري فحص الرابط والتأكد من صحته...* \nيرجى الانتظار لحظات قليلة بينما أقوم بالاتصال بالسيرفر."
@@ -60,7 +60,7 @@ def handle_message(message):
     btn_audio = InlineKeyboardButton("🎵 تحميل كـ صوت (Audio MP3)", callback_data=f"aud|{url}")
     markup.add(btn_video, btn_audio)
     
-    # تعديل الرسالة وإظهار الخيارات
+    # تعديل الرسالة وإظهار الخيارات بالعبارة الكاملة
     bot.edit_message_text(
         "🎉 *تم التعرف على الرابط بنجاح!* 🎉\n\nالرجاء اختيار الصيغة التي ترغب في تحميل الملف بها من الخيارات أدناه 👇:",
         chat_id=message.chat.id,
@@ -69,24 +69,24 @@ def handle_message(message):
         parse_mode="Markdown"
     )
 
-# 3️⃣ دالة معالجة ضغطات الأزرار والتحميل
+# 3️⃣ دالة معالجة ضغطات الأزرار والتحميل (بالعبارات المفصلة)
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
     action, url = call.data.split('|')
     chat_id = call.message.chat.id
     
-    # إشعار المستخدم ببدء العملية
+    # إشعار المستخدم ببدء العملية (العبارة الطويلة)
     status_msg = bot.send_message(
         chat_id, 
         "⏳ *جاري بدء عملية التحميل الآن...* \nقد يستغرق الأمر بعض الوقت اعتماداً على حجم الفيديو وسرعة السيرفر. يرجى عدم إرسال روابط أخرى حتى أنتهي."
     )
     
-    # إعدادات yt-dlp بناءً على الاختيار
+    # إعدادات yt-dlp
     if action == "vid":
         ydl_opts = {
             'format': 'best',
             'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(title)s.%(ext)s'),
-            'max_filesize': 50 * 1024 * 1024 # حد أقصى 50 ميجا عشان التليجرام
+            'max_filesize': 50 * 1024 * 1024
         }
         media_type = "فيديو"
     else:
@@ -115,7 +115,7 @@ def callback_query(call):
                 
             title = info.get('title', 'ملف محمل')
             
-            # تحديث الرسالة للإرسال
+            # تحديث الرسالة للإرسال بالعبارات الكاملة
             bot.edit_message_text(
                 f"📤 *اكتمل التحميل بنجاح!* \nجاري الآن رفع ملف الـ {media_type} الخاص بك إلى تيليجرام...",
                 chat_id=chat_id,
