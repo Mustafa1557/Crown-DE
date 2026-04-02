@@ -20,11 +20,14 @@ def run_static_server():
 
 threading.Thread(target=run_static_server, daemon=True).start()
 
-# --- 2. إعدادات الإدارة والبوت 
+# --- 2. إعدادات الإدارة والبوت ---
 
 # 🔒 سحب التوكن بشكل آمن من متغيرات البيئة في السيرفر
 TOKEN = os.environ.get("BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
+
+# 🆔 الآيدي الخاص بك لإرسال إشعارات التحكم والمراقبة
+ADMIN_ID = 8168754101
 
 user_data = {} 
 
