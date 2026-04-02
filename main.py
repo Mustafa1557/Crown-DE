@@ -26,7 +26,6 @@ threading.Thread(target=run_static_server, daemon=True).start()
 TOKEN = os.environ.get("BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
 
-bot = telebot.TeleBot(TOKEN)
 user_data = {} 
 
 # --- 3. محرك التحميل المطور لتخطي الحظر ---
