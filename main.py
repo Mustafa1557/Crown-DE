@@ -6,6 +6,7 @@ import telebot
 import yt_dlp
 import re
 import random
+from supabase import create_client, Client # استدعاء سوبابيس
 
 # --- 1. كود منع النوم (Keep-Alive Server) ---
 def run_static_server():
@@ -20,17 +21,21 @@ def run_static_server():
 
 threading.Thread(target=run_static_server, daemon=True).start()
 
-# --- 2. إعدادات الإدارة والبوت ---
+# --- 2. إعدادات الإدارة والبوت وسوبابيس ---
 TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = 8168754101
 
 bot = telebot.TeleBot(TOKEN)
 user_data = {} 
 
+# بيانات Supabase (اللي إنت حطيتها قبيل)
+SUPABASE_URL = "https://nrcpotvspxdvxlxbwzto.supabase.co"
+SUPABASE_KEY = "حط_الـ_anon_key_حقك_هنا_بين_علامات_التنصيص"
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
 # --- 3. محرك التحميل المطور لتخطي الحظر ---
 class CrownEngine:
     def __init__(self, d_type='video'):
-        # قائمة User-Agents متنوعة لتجنب الحظر
         agents = [
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
@@ -81,12 +86,28 @@ def notify_admin(user_info, action_type, detail):
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     notify_admin(message.from_user, "فتح البوت", "بداية الاستخدام")
+    
     welcome_text = (
         f"يا مرحب بيك يا {message.from_user.first_name} في بوت CrownDL 👑\n\n"
         "أنا هنا عشان أخدمك وأنزل ليك الفيديوهات من يوتيوب وتيك توك وفيسبوك بكل سهولة.\n\n"
         "✨ **كل اللي عليك ترسل الرابط وهسي بنجهزه ليك!**"
     )
     bot.send_message(message.chat.id, welcome_text)
+    
+    # --- كود حفظ المستخدم في سوبابيس (بالمسافات المظبوطة) ---
+    user_id = message.from_user.id
+    username = message.from_user.username or "No Username"
+    first_name = message.from_user.first_name or "No Name"
+    
+    try:
+        supabase.table('users').insert({
+            'user_id': user_id, 
+            'username': username,
+            'first_name': first_name
+        }).execute()
+    except Exception as e:
+        # لو المستخدم مسجل قبل كدة حيطنش الإيرور
+        pass
 
 @bot.message_handler(func=lambda m: True)
 def handle_url(message):
@@ -141,3 +162,4 @@ def handle_query(call):
 if __name__ == "__main__":
     print("✅ CrownDL Pro is running...")
     bot.infinity_polling()
+
