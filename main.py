@@ -1,4 +1,4 @@
-import http.server
+Import http.server
 import socketserver
 import threading
 import os
@@ -21,14 +21,9 @@ def run_static_server():
 threading.Thread(target=run_static_server, daemon=True).start()
 
 # --- 2. إعدادات الإدارة والبوت ---
-
-# 🔒 سحب التوكن بشكل آمن من متغيرات البيئة في السيرفر
-TOKEN = os.environ.get("BOT_TOKEN")
-bot = telebot.TeleBot(TOKEN)
-
-# 🆔 الآيدي الخاص بك لإرسال إشعارات التحكم والمراقبة
+TOKEN = "8283078572:AAEVDf6ml948n3a_O6wmrUbLeEq1GT5O_f4"
 ADMIN_ID = 8168754101
-
+bot = telebot.TeleBot(TOKEN)
 user_data = {} 
 
 # --- 3. محرك التحميل المطور لتخطي الحظر ---
