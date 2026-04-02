@@ -21,7 +21,8 @@ def run_static_server():
 threading.Thread(target=run_static_server, daemon=True).start()
 
 # --- 2. إعدادات الإدارة والبوت ---
-TOKEN = "8283078572:AAEVDf6ml948n3a_O6wmrUbLeEq1GT5O_f4"
+# --- 2. إعدادات الإدارة والبوت ---
+TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = 8168754101
 bot = telebot.TeleBot(TOKEN)
 user_data = {} 
