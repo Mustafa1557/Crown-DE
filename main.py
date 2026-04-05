@@ -1,164 +1,167 @@
-import http.server
-import socketserver
-import threading
 import os
 import telebot
+from telebot import types
+from threading import Thread
+from flask import Flask
+from supabase import create_client, Client
 import yt_dlp
-import re
-import random
-from supabase import create_client, Client # استدعاء سوبابيس
 
-# --- 1. كود منع النوم (Keep-Alive Server) ---
-def run_static_server():
-    port = int(os.environ.get("PORT", 8080))
-    handler = http.server.SimpleHTTPRequestHandler
-    try:
-        with socketserver.TCPServer(("", port), handler) as httpd:
-            print(f"🚀 Admin Server active on port {port}")
-            httpd.serve_forever()
-    except Exception as e:
-        print(f"Server error: {e}")
+# --- 1. تشغيل سيرفر الويب الوهمي للحفاظ على البوت صاحي ---
+app = Flask('')
 
-threading.Thread(target=run_static_server, daemon=True).start()
+@app.route('/')
+def home():
+    return "🚀 البوت شغال تمام والحمد لله!"
+
+def run():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
 
 # --- 2. إعدادات الإدارة والبوت وسوبابيس ---
 TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = 8168754101
 
 bot = telebot.TeleBot(TOKEN)
-user_data = {} 
+user_data = {} # لحفظ حالة المستخدم مؤقتاً (الرابط المختار)
 
-# بيانات Supabase (اللي إنت حطيتها قبيل)
 SUPABASE_URL = "https://nrcpotvspxdvxlxbwzto.supabase.co"
-SUPABASE_KEY = "حط_الـ_anon_key_حقك_هنا_بين_علامات_التنصيص"
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# --- 3. محرك التحميل المطور لتخطي الحظر ---
-class CrownEngine:
-    def __init__(self, d_type='video'):
-        agents = [
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36'
-        ]
-        
-        self.opts = {
-            'format': 'best[ext=mp4]/best' if d_type == 'video' else 'bestaudio/best',
-            'outtmpl': '/tmp/%(title)s.%(ext)s',
-            'quiet': True,
-            'no_warnings': True,
-            'noplaylist': True,
-            'user_agent': random.choice(agents),
-            'referer': 'https://www.tiktok.com/',
-            'nocheckcertificate': True,
-            'ignoreerrors': False,
-            'retries': 10,
-            'socket_timeout': 30,
-            'geo_bypass': True,
-            'add_header': [
-                'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                'Accept-Language: en-US,en;q=0.5',
-            ],
-        }
+# --- مسارات الكوكيز السرية في Render ---
+TIKTOK_COOKIES = "/etc/secrets/tiktok_cookies.json"
+FACEBOOK_COOKIES = "/etc/secrets/facebook_cookies.json"
 
-    def download(self, url):
-        try:
-            with yt_dlp.YoutubeDL(self.opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                return ydl.prepare_filename(info) if info else None
-        except Exception as e:
-            print(f"❌ Download Error: {e}")
-            return None
+# --- 3. دوال استقبال الرسائل والأزرار ---
 
-# --- 4. نظام المراقبة ---
-def notify_admin(user_info, action_type, detail):
-    msg = (f"🔔 **إشعار جديد للمدير**\n\n"
-           f"👤 المستخدم: {user_info.first_name}\n"
-           f"🆔 الآيدي: `{user_info.id}`\n"
-           f"⚙️ الحركة: {action_type}\n"
-           f"🔗 الرابط: {detail}")
-    try:
-        bot.send_message(ADMIN_ID, msg, parse_mode="Markdown")
-    except:
-        pass
-
-# --- 5. معالجة الرسائل بعبارات لينة ---
+# دالة الترحيب
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    notify_admin(message.from_user, "فتح البوت", "بداية الاستخدام")
-    
-    welcome_text = (
-        f"يا مرحب بيك يا {message.from_user.first_name} في بوت CrownDL 👑\n\n"
-        "أنا هنا عشان أخدمك وأنزل ليك الفيديوهات من يوتيوب وتيك توك وفيسبوك بكل سهولة.\n\n"
-        "✨ **كل اللي عليك ترسل الرابط وهسي بنجهزه ليك!**"
-    )
+    welcome_text = "يا مرحب بيك في بوت CrownDL 👑\nأرسل لي أي رابط من يوتيوب، فيسبوك، أو تيك توك وحأحمله ليك!"
     bot.send_message(message.chat.id, welcome_text)
-    
-    # --- كود حفظ المستخدم في سوبابيس (بالمسافات المظبوطة) ---
-    user_id = message.from_user.id
-    username = message.from_user.username or "No Username"
-    first_name = message.from_user.first_name or "No Name"
-    
-    try:
-        supabase.table('users').insert({
-            'user_id': user_id, 
-            'username': username,
-            'first_name': first_name
-        }).execute()
-    except Exception as e:
-        # لو المستخدم مسجل قبل كدة حيطنش الإيرور
-        pass
 
-@bot.message_handler(func=lambda m: True)
-def handle_url(message):
+# دالة استقبال الروابط وتوزيعها
+@bot.message_handler(func=lambda message: True)
+def handle_message(message):
     url = message.text
-    uid = message.chat.id
+    chat_id = message.chat.id
     
-    if re.match(r'(https?://.+)', url):
-        notify_admin(message.from_user, "طلب تحميل", url)
-        user_data[uid] = {'url': url}
+    # حفظ الرابط مؤقتاً عشان نعرف المستخدم عاوز يحمل ياتو رابط
+    user_data[chat_id] = {'url': url}
+    
+    # 1. روابط اليوتيوب
+    if "youtube.com" in url or "youtu.be" in url:
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        btn1 = types.InlineKeyboardButton("جودة عالية (720p)", callback_data="yt_720")
+        btn2 = types.InlineKeyboardButton("جودة متوسطة (480p)", callback_data="yt_480")
+        btn3 = types.InlineKeyboardButton("جودة منخفضة (360p)", callback_data="yt_360")
+        markup.add(btn1, btn2, btn3)
+        bot.send_message(chat_id, "🎬 اختر جودة التحميل لليوتيوب:", reply_markup=markup)
         
-        markup = telebot.types.InlineKeyboardMarkup()
-        markup.add(
-            telebot.types.InlineKeyboardButton("🎥 فيديو (MP4)", callback_data="vid"),
-            telebot.types.InlineKeyboardButton("🎵 صوت (MP3)", callback_data="aud")
-        )
-        bot.reply_to(message, "من عيوني! حابب أنزله ليك فيديو ولا صوت؟ 👇", reply_markup=markup)
+    # 2. روابط فيسبوك
+    elif "facebook.com" in url or "fb.watch" in url:
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        btn1 = types.InlineKeyboardButton("جودة عالية HD", callback_data="fb_hd")
+        btn2 = types.InlineKeyboardButton("جودة عادية SD", callback_data="fb_sd")
+        markup.add(btn1, btn2)
+        bot.send_message(chat_id, "🎬 اختر جودة التحميل لفيسبوك:", reply_markup=markup)
+        
+    # 3. روابط تيك توك (تحميل مباشر بدون أزرار)
+    elif "tiktok.com" in url:
+        bot.send_message(chat_id, "⏳ جاري تحميل فيديو تيك توك بأعلى جودة ممكنة...")
+        download_video(chat_id, url, TIKTOK_COOKIES, format_opt="best")
+        
     else:
-        bot.reply_to(message, "يا غالي الرابط ده شكله ما تمام، أتأكد منه وأرسله تاني 🧐")
+        bot.send_message(chat_id, "❌ عفواً، أرسل لي روابط يوتيوب، فيسبوك، أو تيك توك فقط!")
 
+# دالة التعامل مع ضغطات الأزرار (Callback)
 @bot.callback_query_handler(func=lambda call: True)
-def handle_query(call):
-    uid = call.message.chat.id
-    url = user_data.get(uid, {}).get('url')
+def callback_inline(call):
+    chat_id = call.message.chat.id
     
-    if not url:
-        bot.answer_callback_query(call.id, "حصل خطأ بسيط، أرسل الرابط تاني")
+    # التأكد إن المستخدم عنده رابط مسجل
+    if chat_id not in user_data:
+        bot.send_message(chat_id, "❌ حصل خطأ، أرسل الرابط مرة تانية من فضلك.")
         return
+        
+    url = user_data[chat_id]['url']
+    
+    # مسح الأزرار بعد الضغط عليها
+    bot.edit_message_reply_markup(chat_id, call.message.message_id, reply_markup=None)
+    
+    # فرز الخيارات
+    if call.data == "yt_720":
+        bot.send_message(chat_id, "⏳ جاري التحميل بجودة 720p...")
+        download_video(chat_id, url, None, format_opt="bestvideo[height<=720]+bestaudio/best")
+        
+    elif call.data == "yt_480":
+        bot.send_message(chat_id, "⏳ جاري التحميل بجودة 480p...")
+        download_video(chat_id, url, None, format_opt="bestvideo[height<=480]+bestaudio/best")
+        
+    elif call.data == "yt_360":
+        bot.send_message(chat_id, "⏳ جاري التحميل بجودة 360p...")
+        download_video(chat_id, url, None, format_opt="bestvideo[height<=360]+bestaudio/best")
+        
+    elif call.data == "fb_hd":
+        bot.send_message(chat_id, "⏳ جاري التحميل بجودة عالية HD...")
+        download_video(chat_id, url, FACEBOOK_COOKIES, format_opt="best")
+        
+    elif call.data == "fb_sd":
+        bot.send_message(chat_id, "⏳ جاري التحميل بجودة عادية SD...")
+        download_video(chat_id, url, FACEBOOK_COOKIES, format_opt="worst")
 
-    bot.edit_message_text("⏳ ثواني بس يا غالي، جاري سحب الفيديو من السيرفر...", uid, call.message.message_id)
+# --- 4. دالة التحميل وتسجيل البيانات في Supabase ---
+def download_video(chat_id, url, cookies_path, format_opt):
+    ydl_opts = {
+        'format': format_opt,
+        'outtmpl': '/tmp/%(title)s.%(ext)s',
+        'quiet': True,
+    }
     
-    file_type = 'audio' if call.data == 'aud' else 'video'
-    engine = CrownEngine(file_type)
-    file_path = engine.download(url)
-    
-    if file_path and os.path.exists(file_path):
+    # لو في كوكيز بنمرره، لو مافي (زي يوتيوب مثلاً) بنخليه يشتغل بدونه
+    if cookies_path:
+        ydl_opts['cookiefile'] = cookies_path
+        
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            video_path = ydl.prepare_filename(info)
+            
+            # إرسال الفيديو للمستخدم
+            with open(video_path, 'rb') as video:
+                bot.send_video(chat_id, video, caption="تم التحميل بنجاح بواسطة CrownDL 👑")
+                
+            # مسح الملف من السيرفر لعدم امتلاء المساحة
+            os.remove(video_path)
+            
+            # --- تسجيل العملية في قاعدة البيانات (Supabase) ---
+            try:
+                supabase.table("downloads").insert({
+                    "chat_id": chat_id,
+                    "url": url,
+                    "status": "success"
+                }).execute()
+            except Exception as db_err:
+                print(f"فشل التسجيل في قاعدة البيانات: {db_err}")
+                
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ حصلت مشكلة أثناء التحميل!\nالخطأ: {str(e)}")
+        # تسجيل العملية كفاشلة في سوبابيس
         try:
-            bot.edit_message_text("🚀 الفيديو وصل! جاري الرفع لتليجرام...", uid, call.message.message_id)
-            with open(file_path, 'rb') as f:
-                caption = "تفضل يا ملك، تم التحميل بواسطة @CrownDL_bot 👑"
-                if file_type == 'audio':
-                    bot.send_audio(uid, f, caption=caption)
-                else:
-                    bot.send_video(uid, f, caption=caption)
-            bot.delete_message(uid, call.message.message_id)
-        except Exception as e:
-            bot.send_message(uid, f"يا غالي حصلت مشكلة أثناء الإرسال: {e}")
-        finally:
-            if os.path.exists(file_path): os.remove(file_path)
-    else:
-        bot.send_message(uid, "للأسف يا غالي السيرفر رفض الطلب، جرب فيديو تاني أو رابط يوتيوب 💔")
+            supabase.table("downloads").insert({
+                "chat_id": chat_id,
+                "url": url,
+                "status": "failed"
+            }).execute()
+        except:
+            pass
 
+# --- 5. تشغيل كل شيء ---
 if __name__ == "__main__":
-    print("✅ CrownDL Pro is running...")
+    keep_alive()
+    print("🤖 البوت بدأ العمل الآن بالنسخة الكاملة...")
     bot.infinity_polling()
