@@ -7,25 +7,19 @@ import yt_dlp
 import re
 import random
 from supabase import create_client, Client # استدعاء سوبابيس
-from flask import Flask
-from threading import Thread
 
-# --- 1. كود إيهام Render بأن البوت عبارة عن موقع ويب (منع النوم) ---
-app = Flask('')
+# --- 1. كود منع النوم (Keep-Alive Server) ---
+def run_static_server():
+    port = int(os.environ.get("PORT", 8080))
+    handler = http.server.SimpleHTTPRequestHandler
+    try:
+        with socketserver.TCPServer(("", port), handler) as httpd:
+            print(f"🚀 Admin Server active on port {port}")
+            httpd.serve_forever()
+    except Exception as e:
+        print(f"Server error: {e}")
 
-@app.route('/')
-def home():
-    return "🚀 البوت شغال تمام والحمد لله!"
-
-def run():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
-
-def keep_alive():
-    t = Thread(target=run)
-    t.start()
-
-keep_alive()
+threading.Thread(target=run_static_server, daemon=True).start()
 
 # --- 2. إعدادات الإدارة والبوت وسوبابيس ---
 TOKEN = os.environ.get("BOT_TOKEN")
@@ -34,80 +28,46 @@ ADMIN_ID = 8168754101
 bot = telebot.TeleBot(TOKEN)
 user_data = {} 
 
+# بيانات Supabase (اللي إنت حطيتها قبيل)
 SUPABASE_URL = "https://nrcpotvspxdvxlxbwzto.supabase.co"
 SUPABASE_KEY = "حط_الـ_anon_key_حقك_هنا_بين_علامات_التنصيص"
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# --- 3. محرك التحميل المطور (مفصل لكل موقع) ---
+# --- 3. محرك التحميل المطور لتخطي الحظر ---
 class CrownEngine:
-    def __init__(self):
-        # يوزرات عشوائية عشان نخدع المواقع
-        self.agents = [
+    def __init__(self, d_type='video'):
+        agents = [
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36'
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36'
         ]
-
-    # 🔴 كود خاص بسحب اليوتيوب
-    def download_youtube(self, url, d_type):
-        opts = {
-            'format': 'best[ext=mp4]/best' if d_type == 'video' else 'bestaudio/best',
-            'outtmpl': '/tmp/yt_%(title)s.%(ext)s',
-            'user_agent': random.choice(self.agents),
-            'nocheckcertificate': True,
-            'quiet': True,
-        }
-        # هنا بعدين لما تعمل ملف كوكيز لليوتيوب حتضيف السطر ده بس:
-        # if os.path.exists("youtube_cookies.txt"): opts['cookiefile'] = 'youtube_cookies.txt'
         
-        try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                return ydl.prepare_filename(info)
-        except Exception as e:
-            print(f"❌ YouTube Error: {e}")
-            return None
-
-    # 🔵 كود خاص بسحب الفيسبوك
-    def download_facebook(self, url, d_type):
-        opts = {
+        self.opts = {
             'format': 'best[ext=mp4]/best' if d_type == 'video' else 'bestaudio/best',
-            'outtmpl': '/tmp/fb_%(title)s.%(ext)s',
-            'user_agent': random.choice(self.agents),
-            'nocheckcertificate': True,
+            'outtmpl': '/tmp/%(title)s.%(ext)s',
             'quiet': True,
-        }
-        # هنا بنشغل كوكيز الفيس لو كانت موجودة بصيغة Netscape المظبوطة
-        if os.path.exists("facebook_cookies.txt"):
-            opts['cookiefile'] = 'facebook_cookies.txt'
-            
-        try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                return ydl.prepare_filename(info)
-        except Exception as e:
-            print(f"❌ Facebook Error: {e}")
-            return None
-
-    # ⚫ كود خاص بسحب التيك توك
-    def download_tiktok(self, url, d_type):
-        opts = {
-            'format': 'best[ext=mp4]/best' if d_type == 'video' else 'bestaudio/best',
-            'outtmpl': '/tmp/tt_%(title)s.%(ext)s',
+            'no_warnings': True,
+            'noplaylist': True,
+            'user_agent': random.choice(agents),
             'referer': 'https://www.tiktok.com/',
-            'user_agent': random.choice(self.agents),
             'nocheckcertificate': True,
-            'quiet': True,
+            'ignoreerrors': False,
+            'retries': 10,
+            'socket_timeout': 30,
+            'geo_bypass': True,
+            'add_header': [
+                'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                'Accept-Language: en-US,en;q=0.5',
+            ],
         }
-        # هنا بنشغل كوكيز التيك توك لو كانت موجودة بصيغة Netscape المظبوطة
-        if os.path.exists("tiktok_cookies.txt"):
-            opts['cookiefile'] = 'tiktok_cookies.txt'
-            
+
+    def download(self, url):
         try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
+            with yt_dlp.YoutubeDL(self.opts) as ydl:
                 info = ydl.extract_info(url, download=True)
-                return ydl.prepare_filename(info)
+                return ydl.prepare_filename(info) if info else None
         except Exception as e:
-            print(f"❌ TikTok Error: {e}")
+            print(f"❌ Download Error: {e}")
             return None
 
 # --- 4. نظام المراقبة ---
@@ -122,7 +82,7 @@ def notify_admin(user_info, action_type, detail):
     except:
         pass
 
-# --- 5. معالجة الرسائل ---
+# --- 5. معالجة الرسائل بعبارات لينة ---
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     notify_admin(message.from_user, "فتح البوت", "بداية الاستخدام")
@@ -134,13 +94,20 @@ def send_welcome(message):
     )
     bot.send_message(message.chat.id, welcome_text)
     
+    # --- كود حفظ المستخدم في سوبابيس (بالمسافات المظبوطة) ---
+    user_id = message.from_user.id
+    username = message.from_user.username or "No Username"
+    first_name = message.from_user.first_name or "No Name"
+    
     try:
         supabase.table('users').insert({
-            'user_id': message.from_user.id, 
-            'username': message.from_user.username or "No Username",
-            'first_name': message.from_user.first_name or "No Name"
+            'user_id': user_id, 
+            'username': username,
+            'first_name': first_name
         }).execute()
-    except: pass
+    except Exception as e:
+        # لو المستخدم مسجل قبل كدة حيطنش الإيرور
+        pass
 
 @bot.message_handler(func=lambda m: True)
 def handle_url(message):
@@ -163,50 +130,35 @@ def handle_url(message):
 @bot.callback_query_handler(func=lambda call: True)
 def handle_query(call):
     uid = call.message.chat.id
-    url_requested = user_data.get(uid, {}).get('url')
+    url = user_data.get(uid, {}).get('url')
     
-    if not url_requested:
-        bot.answer_callback_query(call.id, "انتهت جلسة هذا الرابط، أرسله مرة أخرى!")
+    if not url:
+        bot.answer_callback_query(call.id, "حصل خطأ بسيط، أرسل الرابط تاني")
         return
-        
-    bot.answer_callback_query(call.id, "جاري التجهيز والتحميل... انتظرني ثواني ⏳")
-    download_type = 'video' if call.data == "vid" else 'audio'
-    
-    engine = CrownEngine()
-    file_path = None
-    
-    # 🌟 هنا الذكاء: بنشوف الرابط جاي من وين ونشغل الكود الخاص بيه
-    if "youtube.com" in url_requested or "youtu.be" in url_requested:
-        file_path = engine.download_youtube(url_requested, download_type)
-        
-    elif "facebook.com" in url_requested or "fb.watch" in url_requested:
-        file_path = engine.download_facebook(url_requested, download_type)
-        
-    elif "tiktok.com" in url_requested:
-        file_path = engine.download_tiktok(url_requested, download_type)
-        
-    else:
-        # لو موقع تاني خالص
-        try:
-            with yt_dlp.YoutubeDL({'format': 'best'}) as ydl:
-                info = ydl.extract_info(url_requested, download=True)
-                file_path = ydl.prepare_filename(info)
-        except: file_path = None
 
-    # إرسال الملف للمستخدم
+    bot.edit_message_text("⏳ ثواني بس يا غالي، جاري سحب الفيديو من السيرفر...", uid, call.message.message_id)
+    
+    file_type = 'audio' if call.data == 'aud' else 'video'
+    engine = CrownEngine(file_type)
+    file_path = engine.download(url)
+    
     if file_path and os.path.exists(file_path):
-        bot.send_chat_action(uid, 'upload_video' if download_type == 'video' else 'upload_document')
         try:
+            bot.edit_message_text("🚀 الفيديو وصل! جاري الرفع لتليجرام...", uid, call.message.message_id)
             with open(file_path, 'rb') as f:
-                if download_type == 'video':
-                    bot.send_video(uid, f, caption="تم التحميل بواسطة CrownDL 👑")
+                caption = "تفضل يا ملك، تم التحميل بواسطة @CrownDL_bot 👑"
+                if file_type == 'audio':
+                    bot.send_audio(uid, f, caption=caption)
                 else:
-                    bot.send_audio(uid, f, caption="تم التحميل بواسطة CrownDL 👑")
-            os.remove(file_path)
+                    bot.send_video(uid, f, caption=caption)
+            bot.delete_message(uid, call.message.message_id)
         except Exception as e:
-            bot.send_message(uid, f"حصلت مشكلة أثناء إرسال الملف 😢")
+            bot.send_message(uid, f"يا غالي حصلت مشكلة أثناء الإرسال: {e}")
+        finally:
+            if os.path.exists(file_path): os.remove(file_path)
     else:
-        bot.send_message(uid, "للأسف ما قدرت أحمل الرابط ده، جرب رابط تاني أو اتأكد من الرابط 🧐")
+        bot.send_message(uid, "للأسف يا غالي السيرفر رفض الطلب، جرب فيديو تاني أو رابط يوتيوب 💔")
 
-print("👑 البوت شغال الآن...")
-bot.infinity_polling()
+if __name__ == "__main__":
+    print("✅ CrownDL Pro is running...")
+    bot.infinity_polling()
