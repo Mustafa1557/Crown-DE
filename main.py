@@ -7,19 +7,27 @@ import yt_dlp
 import re
 import random
 from supabase import create_client, Client # استدعاء سوبابيس
+from flask import Flask
+from threading import Thread
 
-# --- 1. كود منع النوم (Keep-Alive Server) ---
-def run_static_server():
-    port = int(os.environ.get("PORT", 8080))
-    handler = http.server.SimpleHTTPRequestHandler
-    try:
-        with socketserver.TCPServer(("", port), handler) as httpd:
-            print(f"🚀 Admin Server active on port {port}")
-            httpd.serve_forever()
-    except Exception as e:
-        print(f"Server error: {e}")
+# --- 1. كود إيهام Render بأن البوت عبارة عن موقع ويب (منع النوم) ---
+app = Flask('')
 
-threading.Thread(target=run_static_server, daemon=True).start()
+@app.route('/')
+def home():
+    return "🚀 البوت شغال تمام والحمد لله!"
+
+def run():
+    # Render بيطلب إن البوت يشتغل على بورت معين هو بيبعته في الـ Environment
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
+
+# تشغيل السيرفر الوهمي في الخلفية
+keep_alive()
 
 # --- 2. إعدادات الإدارة والبوت وسوبابيس ---
 TOKEN = os.environ.get("BOT_TOKEN")
@@ -141,4 +149,40 @@ def handle_url(message):
 @bot.callback_query_handler(func=lambda call: True)
 def handle_query(call):
     uid = call.message.chat.id
-    # هنا حتكمل كود السحب المعتاد بتاعك...
+    url_requested = user_data.get(uid, {}).get('url')
+    
+    if not url_requested:
+        bot.answer_callback_query(call.id, "انتهت جلسة هذا الرابط، أرسله مرة أخرى!")
+        return
+        
+    bot.answer_callback_query(call.id, "جاري التجهيز والتحميل... انتظرني ثواني ⏳")
+    
+    # تحديد النوع (فيديو أو صوت) بناءً على ضغطة المستخدم
+    download_type = 'video' if call.data == "vid" else 'audio'
+    
+    # استدعاء محرك السحب الذكي بالكوكيز
+    engine = CrownEngine(url=url_requested, d_type=download_type)
+    file_path = engine.download(url_requested)
+    
+    if file_path and os.path.exists(file_path):
+        bot.send_chat_action(uid, 'upload_video' if download_type == 'video' else 'upload_document')
+        
+        try:
+            with open(file_path, 'rb') as f:
+                if download_type == 'video':
+                    bot.send_video(uid, f, caption="تم التحميل بواسطة CrownDL 👑")
+                else:
+                    bot.send_audio(uid, f, caption="تم التحميل بواسطة CrownDL 👑")
+                    
+            # حذف الملف بعد الإرسال عشان ما يملا السيرفر
+            os.remove(file_path)
+            
+        except Exception as e:
+            bot.send_message(uid, f"حصلت مشكلة أثناء إرسال الملف 😢")
+            print(f"Error sending file: {e}")
+    else:
+        bot.send_message(uid, "للأسف ما قدرت أحمل الرابط ده، جرب رابط تاني أو اتأكد من الرابط 🧐")
+
+# --- 6. تشغيل البوت المستمر ---
+print("👑 البوت شغال الآن...")
+bot.infinity_polling()
