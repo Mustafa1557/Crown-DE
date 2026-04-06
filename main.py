@@ -21,8 +21,8 @@ threading.Thread(target=run_flask).start()
 
 # --- 2. إعدادات البوت والمراقبة ---
 API_TOKEN = os.getenv('BOT_TOKEN')
-# نصيحة: حط الآيدي بتاعك هنا عشان تجيك تنبيهات منو بيستخدم البوت
-ADMIN_ID = 8168754101
+# تم تعديل الآيدي الخاص بك هنا يا مصطفى للمراقبة
+ADMIN_ID = 8168754101 
 
 bot = telebot.TeleBot(API_TOKEN)
 
@@ -38,13 +38,13 @@ def send_welcome(message):
     )
     bot.reply_to(message, welcome_text)
     
-    # إشعار للمالك (اختياري)
+    # إشعار لك (المالك) عند دخول مستخدم جديد
     try:
         bot.send_message(ADMIN_ID, f"🔔 مستخدم جديد دخل البوت:\n👤 الاسم: {user_name}\n🆔 الآيدي: {message.from_user.id}")
     except:
         pass
 
-# --- 4. معالجة التحميل (بدون تكرار الرابط) ---
+# --- 4. معالجة التحميل (تعديل الرسالة تلقائياً) ---
 @bot.message_handler(func=lambda message: True)
 def download_video(message):
     url = message.text
@@ -54,26 +54,26 @@ def download_video(message):
         bot.reply_to(message, "الرجاء إرسال رابط صحيح يبدأ بـ http ❌")
         return
 
-    # إشعار للمالك بالتحميل
+    # إشعار لك عند بدء أي عملية تحميل
     try:
         bot.send_message(ADMIN_ID, f"📥 {message.from_user.first_name} يحمل فيديو:\n{url}")
     except:
         pass
 
-    # رسالة الحالة (يتم تعديلها لاحقاً)
+    # رسالة الحالة الأولية
     status_msg = bot.reply_to(message, "جاري فحص الرابط... ⏳")
     
     ydl_opts = {
         'format': 'best',
         'outtmpl': f'video_{chat_id}.%(ext)s',
-        'max_filesize': 48 * 1024 * 1024, # حد 48 ميجا عشان التلغرام
+        'max_filesize': 48 * 1024 * 1024,
         'quiet': True,
         'no_warnings': True,
     }
     
     try:
         with YoutubeDL(ydl_opts) as ydl:
-            # تعديل الرسالة بدل إرسال واحدة جديدة
+            # تعديل نص الرسالة السابقة بدلاً من إرسال رسالة جديدة
             bot.edit_message_text("جاري التحميل من المصدر... 📥", chat_id, status_msg.message_id)
             
             info = ydl.extract_info(url, download=True)
@@ -82,8 +82,8 @@ def download_video(message):
             bot.edit_message_text("جاري الرفع إلى تلجرام... 📤", chat_id, status_msg.message_id)
             
             with open(filename, 'rb') as video:
-                # إرسال الفيديو ومسح رسالة التحميل
                 bot.send_video(chat_id, video, caption="تم التحميل بنجاح! ✅")
+                # حذف رسالة الحالة بعد اكتمال الرفع لنظافة المحادثة
                 bot.delete_message(chat_id, status_msg.message_id)
             
             if os.path.exists(filename):
@@ -92,17 +92,17 @@ def download_video(message):
     except Exception as e:
         error_msg = str(e)
         if "File is too big" in error_msg:
-            bot.edit_message_text("❌ عذراً، حجم الفيديو أكبر من المسموح به (50 ميجا).", chat_id, status_msg.message_id)
+            bot.edit_message_text("❌ عذراً، حجم الفيديو أكبر من 50 ميجا.", chat_id, status_msg.message_id)
         else:
-            bot.edit_message_text(f"❌ حدث خطأ أثناء المعالجة. تأكد من الرابط.", chat_id, status_msg.message_id)
+            bot.edit_message_text(f"❌ حدث خطأ. تأكد من الرابط أو حاول لاحقاً.", chat_id, status_msg.message_id)
         
         if 'filename' in locals() and os.path.exists(filename):
             os.remove(filename)
 
 # --- 5. تشغيل البوت مع حل مشكلة الـ Conflict ---
 if __name__ == "__main__":
-    # مسح أي اتصال قديم فور تشغيل السيرفر
+    # مسح الـ Webhook لضمان عدم حدوث تضارب (Conflict)
     bot.remove_webhook()
     print("البوت شغال بأفضل إعدادات! 🔥")
-    # استخدام infinity_polling لضمان الاستمرارية
+    # استخدام infinity_polling لضمان استقرار الاتصال
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
