@@ -1,72 +1,64 @@
-import os
 import telebot
-from telebot import types
-import yt_dlp
-from flask import Flask
+import os
 import threading
+from flask import Flask
+from yt_dlp import YoutubeDL
 
-# إعدادات Flask عشان السيرفر يفضل شغال في Render
+# --- إعداد سيرفر وهمي لمنع النوم ---
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "البوت يعمل بنجاح!"
+    return "البوت شغال بنجاح! 🚀"
 
-def run():
-    app.run(host='0.0.0.0', port=8080)
+def run_flask():
+    # ريندر بيحدد الـ Port تلقائياً في متغير البيئة
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port)
 
-def keep_alive():
-    t = threading.Thread(target=run)
-    t.start()
+# تشغيل السيرفر في "خيط" (Thread) منفصل عشان ما يعطل البوت
+t = threading.Thread(target=run_flask)
+t.start()
 
-# حط التوكن بتاعك هنا
-BOT_TOKEN = "7902181711:AAGyv09Y97K_g52I0uG13DAr7l6hP8G8F5U"
-bot = telebot.TeleBot(BOT_TOKEN)
+# --- إعدادات البوت ---
+API_TOKEN = os.getenv('BOT_TOKEN')
+bot = telebot.TeleBot(API_TOKEN)
 
-# دالة لتحميل الفيديوهات بدون كوكيز
-def download_video(url, chat_id):
-    # رسالة جاري التحميل
-    msg = bot.send_message(chat_id, "⏳ جاري محاولة تحميل الفيديو، يرجى الانتظار...")
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    bot.reply_to(message, "أهلاً يا مصطفى! أرسل رابط الفيديو (يوتيوب، فيس، تيك توك) وححمله ليك فوراً. 📥")
+
+@bot.message_handler(func=lambda message: True)
+def download_video(message):
+    url = message.text
+    if not url.startswith('http'):
+        bot.reply_to(message, "الرجاء إرسال رابط صحيح! ❌")
+        return
+        
+    sent_msg = bot.reply_to(message, "جاري المعالجة... انتظر قليلاً ⏳")
     
-    # إعدادات yt-dlp بدون كوكيز
     ydl_opts = {
         'format': 'best',
-        'outtmpl': '%(title)s.%(ext)s',
+        'outtmpl': 'video_%(id)s.%(ext)s',
+        'max_filesize': 48 * 1024 * 1024,
         'quiet': True,
-        'no_warnings': True,
     }
     
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
             
-            # إرسال الفيديو للمستخدم
-            bot.send_message(chat_id, "📤 جاري إرسال الفيديو...")
             with open(filename, 'rb') as video:
-                bot.send_video(chat_id, video)
-                
-            # مسح الملف بعد الإرسال لتوفير المساحة
+                bot.send_video(message.chat.id, video, caption="تم التحميل بنجاح! ✅")
+            
             os.remove(filename)
-            bot.delete_message(chat_id, msg.message_id)
-            bot.send_message(chat_id, "✅ تم التحميل بنجاح!")
+            bot.delete_message(message.chat.id, sent_msg.message_id)
             
     except Exception as e:
-        bot.delete_message(chat_id, msg.message_id)
-        # إرسال رسالة الخطأ للمستخدم عشان نعرف المشكلة من وين
-        bot.send_message(chat_id, f"❌ فشل التحميل. السبب:\n{str(e)}")
+        bot.edit_message_text(f"خطأ: {str(e)}", message.chat.id, sent_msg.message_id)
+        if 'filename' in locals() and os.path.exists(filename):
+            os.remove(filename)
 
-# استقبال الروابط
-@bot.message_handler(func=lambda message: True)
-def handle_message(message):
-    url = message.text
-    if "youtube.com" in url or "youtu.be" in url or "tiktok.com" in url or "facebook.com" in url:
-        # تشغيل التحميل في Thread منفصل عشان البوت ما يهنجش
-        threading.Thread(target=download_video, args=(url, message.chat.id)).start()
-    else:
-        bot.send_message(message.chat.id, "⚠️ يرجى إرسال رابط صالح من (يوتيوب، تيك توك، أو فيسبوك)")
-
-if __name__ == '__main__':
-    keep_alive()
-    print("البوت بدأ العمل الان بدون كوكيز... 🤖")
-    bot.infinity_polling()
+print("البوت والسيرفر شغالين الآن! 🔥")
+bot.polling(none_stop=True)
