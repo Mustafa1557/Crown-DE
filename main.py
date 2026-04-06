@@ -18,7 +18,7 @@ threading.Thread(target=run_flask).start()
 
 # --- إعدادات البوت والمراقبة ---
 API_TOKEN = os.getenv('BOT_TOKEN')
-ADMIN_ID = "حط_هنا_الاي_دي_بتاعك" # الـ ID بتاع حسابك الشخصي (أرقام فقط)
+ADMIN_ID = 8168754101
 bot = telebot.TeleBot(API_TOKEN)
 
 @bot.message_handler(commands=['start'])
