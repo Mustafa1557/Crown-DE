@@ -8,7 +8,7 @@ from yt_dlp import YoutubeDL
 app = Flask('')
 @app.route('/')
 def home():
-    return "Bot is running!"
+    return "Bot is active! 🚀"
 
 def run_flask():
     port = int(os.environ.get('PORT', 8080))
@@ -18,18 +18,12 @@ threading.Thread(target=run_flask).start()
 
 # --- إعدادات البوت والمراقبة ---
 API_TOKEN = os.getenv('BOT_TOKEN')
-ADMIN_ID = 8168754101
+ADMIN_ID = "123456789" # حط الآيدي بتاعك هنا للمراقبة
 bot = telebot.TeleBot(API_TOKEN)
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    user = message.from_user
-    welcome_text = f"أهلاً {user.first_name}! أرسل رابط الفيديو وسأقوم بتحميله لك. 📥"
-    bot.reply_to(message, welcome_text)
-    
-    # إشعار للمالك بدخول مستخدم جديد
-    log_msg = f"🔔 مستخدم جديد دخل البوت:\n👤 الاسم: {user.first_name}\n🆔 الآيدي: {user.id}\n🔗 اليوزر: @{user.username}"
-    bot.send_message(ADMIN_ID, log_msg)
+    bot.reply_to(message, "أهلاً مصطفى! أرسل رابط الفيديو وسأقوم بتحميله لك فوراً. 📥")
 
 @bot.message_handler(func=lambda message: True)
 def download_video(message):
@@ -37,36 +31,52 @@ def download_video(message):
     user = message.from_user
     
     if not url.startswith('http'):
-        bot.reply_to(message, "الرجاء إرسال رابط صحيح! ❌")
+        bot.reply_to(message, "يا حبوب، أرسل رابط صحيح ❌")
         return
+
+    # إشعار للمالك (اختياري)
+    try:
+        bot.send_message(ADMIN_ID, f"📥 {user.first_name} يحمل: {url}")
+    except:
+        pass
         
-    # إشعار للمالك بوجود عملية تحميل
-    bot.send_message(ADMIN_ID, f"📥 {user.first_name} يحاول تحميل فيديو:\n{url}")
-    
-    sent_msg = bot.reply_to(message, "جاري المعالجة... انتظر قليلاً ⏳")
+    # رسالة الحالة الأولية
+    sent_msg = bot.reply_to(message, "جاري معالجة الرابط... ⏳")
     
     ydl_opts = {
         'format': 'best',
-        'outtmpl': 'video_%(id)s.%(ext)s',
+        'outtmpl': f'video_{user.id}.%(ext)s',
         'max_filesize': 48 * 1024 * 1024,
         'quiet': True,
     }
     
     try:
         with YoutubeDL(ydl_opts) as ydl:
+            # تحديث الرسالة لـ "جاري التحميل"
+            bot.edit_message_text("جاري تحميل الفيديو من السيرفر... 📥", message.chat.id, sent_msg.message_id)
+            
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
             
+            # تحديث الرسالة لـ "جاري الرفع"
+            bot.edit_message_text("جاري رفع الفيديو للتليجرام... 📤", message.chat.id, sent_msg.message_id)
+            
             with open(filename, 'rb') as video:
-                bot.send_video(message.chat.id, video, caption=f"تم التحميل بنجاح! ✅\nبواسطة: @{bot.get_me().username}")
+                # إرسال الفيديو وحذف رسالة "جاري الرفع"
+                bot.send_video(message.chat.id, video, caption="تم التحميل بنجاح! ✅")
+                bot.delete_message(message.chat.id, sent_msg.message_id)
             
             os.remove(filename)
-            bot.delete_message(message.chat.id, sent_msg.message_id)
             
     except Exception as e:
-        bot.edit_message_text(f"خطأ: {str(e)}", message.chat.id, sent_msg.message_id)
+        error_text = str(e)
+        if "File is too big" in error_text:
+            bot.edit_message_text("عذراً، الفيديو حجمه أكبر من 50 ميجا (حد تليجرام). ❌", message.chat.id, sent_msg.message_id)
+        else:
+            bot.edit_message_text(f"حصل خطأ: {error_text[:100]}", message.chat.id, sent_msg.message_id)
+        
         if 'filename' in locals() and os.path.exists(filename):
             os.remove(filename)
 
-print("البوت والمراقبة شغالين! 🔥")
+print("البوت شغال بأفضل إعدادات! 🔥")
 bot.polling(none_stop=True)
