@@ -1,8 +1,8 @@
 .tiktok.com	TRUE	/	TRUE	0	cmpl_token	AgQYAPMJ_hfkTtK57OKAqT9dLPOzk2MLSf-FgmCgGM8
 .tiktok.com	TRUE	/	FALSE	0	d_ticket	66781a2e29eb3bab6d994138f48c604829cf8
-.tiktok.com	TRUE	/	TRUE	0	msToken	FF-XMhZb8ZlSu4yBe2vaMKfVyPb3hOOoWpior7CZFKmW36P4QjXjBgPN352hEENlnPBeg6CTFphMD6q8ZHbfR1uOqtPRiZdHRUJAyX1sILsaDq7lYVopSK-VjvtEdOTSF8xtJS5D42ktw8f9EM5-AQc=
+.tiktok.com	TRUE	/	TRUE	0	msToken	E3tvuZbICpXjllOcFQHsOVxh70GMWt-AYagFdUJOPbCcRB3aNo3r3tN6TZvTbF0Td3FNJEFNemNZebMWf192J3dICLpzArMhw2RddmUX4COuj_VCHyXJqpXJM7U7_PbDCBLmqrYmTUngqxE59hLWM3s=
 .tiktok.com	TRUE	/	TRUE	0	multi_sids	7625170481289462805%3Acc93a4d47bc53d39b5c95807f1d23f80
-.tiktok.com	TRUE	/	FALSE	0	odin_tt	81782f9c46a2a09dd013941973fa67c9a7f2887f8f54bfb07508c7ff1fedda1766d8ba5f02cad8adbabf04ec0174e6c67e0676221aa5c7e5a0c0480c43b4ff5474c9d2ea6797fde43f188b0060a4f431
+.tiktok.com	TRUE	/	FALSE	0	odin_tt	c42a2a20b209d53b2e919ebdf432fee9ee191f18b71528090a239ecce7febd70c4835349ed16f7148260d4aca4bbb0a92450caf2726c1b38211333c8253592b0c960ed9cfb8074668d8cff915234d261
 .tiktok.com	TRUE	/	TRUE	0	sessionid	cc93a4d47bc53d39b5c95807f1d23f80
 .tiktok.com	TRUE	/	TRUE	0	sessionid_ss	cc93a4d47bc53d39b5c95807f1d23f80
 .tiktok.com	TRUE	/	TRUE	0	sid_guard	cc93a4d47bc53d39b5c95807f1d23f80%7C1775373815%7C15552000%7CFri%2C+02-Oct-2026+07%3A23%3A35+GMT
@@ -22,10 +22,10 @@
 .tiktok.com	TRUE	/	TRUE	0	uid_tt	a5773beda77e82d7bbbcc51f4d36246517a5dc7a9cbcdac779d03fda619e3622
 .tiktok.com	TRUE	/	TRUE	0	uid_tt_ss	a5773beda77e82d7bbbcc51f4d36246517a5dc7a9cbcdac779d03fda619e3622
 .www.tiktok.com	TRUE	/	TRUE	0	delay_guest_mode_vid	3
-.www.tiktok.com	TRUE	/	FALSE	0	passport_fe_beating_status	true
+.www.tiktok.com	TRUE	/	FALSE	0	passport_fe_beating_status	false
 .www.tiktok.com	TRUE	/	TRUE	0	tiktok_webapp_theme	light
 .www.tiktok.com	TRUE	/	TRUE	0	tiktok_webapp_theme_source	auto
 www.tiktok.com	FALSE	/	FALSE	0	last_login_method	email
-www.tiktok.com	FALSE	/	FALSE	0	msToken	gvpRi0hcWr9a23EUbOasl1P4A_pukrVqywzW4cPYO7fdhHPXf98nXeTa-2rDNxLUWq6UMXWoThe1dxTpmgKF1quKH8tDMXWOCVqBWQjFXgE-lUMRzWPw0T5hDfXcroUGqcpiLTrJ9EfoYiOxgNi043s=
+www.tiktok.com	FALSE	/	FALSE	0	msToken	jQ8Xd_go8-IRqmsFaEws0_f6zszcnBYORg18LbRzcjpjXCiXzfUyYg_giai6nUg49BRK_gxI5Xx0aAvGK_A1InvSJyrV_7c4uwH7Hpnq4YFDMwOr2ZVhurh82QijwnkeMGyf-u7o1l4lKcEbvA0dA-o=
 www.tiktok.com	FALSE	/	FALSE	0	s_v_web_id	verify_mnobz5jd_oDuAKkDY_HhU7_43js_BOML_3u10szGUJc6z
 www.tiktok.com	FALSE	/	FALSE	0	tt_ticket_guard_has_set_public_key	1
