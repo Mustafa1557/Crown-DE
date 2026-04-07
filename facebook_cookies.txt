@@ -1,3 +1,4 @@
+# Netscape HTTP Cookie File
 .facebook.com	TRUE	/	TRUE	0	c_user	61578432281821
 .facebook.com	TRUE	/	TRUE	0	datr	ov7RafLXMN7nF8yPiOj296DI
 .facebook.com	TRUE	/	TRUE	0	fr	1oiYsOuGnmQnGPgCk.AWcWuQascr-5ITK4TJ1EX10cwTggZ-5zfCt1cWdxUCqGhPBNcRI.Bp1LnS..AAA.0.0.Bp1M1n.AWfSNGcTMdDVLC1Zro27orHukVc
