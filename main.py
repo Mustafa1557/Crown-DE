@@ -105,54 +105,75 @@ ADMIN_ID = 8168754101 # معرف مصطفى للمراقبة
 bot = telebot.TeleBot(API_TOKEN)
 
 @bot.message_handler(func=lambda message: True)
-def download_video(message):
+def ask_format(message):
     url = message.text
-    chat_id = message.chat.id
-    
     if not url.startswith('http'):
         bot.reply_to(message, "أرسل رابطاً صالحاً يا مصطفى! 🔗")
         return
 
-    status_msg = bot.reply_to(message, "⏳ جاري فحص الرابط ومعالجته...")
+    markup = telebot.types.InlineKeyboardMarkup()
+    # بنخزن الرابط والنوع في الـ callback_data
+    btn_video = telebot.types.InlineKeyboardButton("🎬 تحميل فيديو", callback_data=f"vid|{url}")
+    btn_audio = telebot.types.InlineKeyboardButton("🎵 تحميل صوت MP3", callback_data=f"aud|{url}")
     
-    # تحديد ملف الكوكيز المناسب
-    cookie_file = None
-    if "youtube" in url or "youtu.be" in url:
-        cookie_file = "youtube_cookies.txt"
-    elif "tiktok.com" in url:
-        cookie_file = "tiktok_cookies.txt"
-   
-    elif "facebook" in url or "fb.watch" in url:
-        cookie_file = "facebook_cookies.txt"
-
-    ydl_opts = {
-        'format': 'best',
-        'outtmpl': f'video_{chat_id}.%(ext)s',
-        'max_filesize': 48 * 1024 * 1024,
-        'quiet': True,
-        'no_warnings': True,
-        'ignoreerrors': True, # يتجاهل أي خطأ في الكوكيز ويحاول التحميل بدونها
-    }
-
-    if cookie_file and os.path.exists(cookie_file):
-        ydl_opts['cookiefile'] = cookie_file
+    markup.add(btn_video, btn_audio)
+    bot.reply_to(message, "ممتاز، اختار داير تحمل شنو:", reply_markup=markup)
+@bot.callback_query_handler(func=lambda call: True)
+def handle_query(call):
+    # تقسيم البيانات (النوع والرابط)
+    format_type, url = call.data.split("|")
+    chat_id = call.message.chat.id
+    
+    status_msg = bot.send_message(chat_id, "⏳ جاري البدء في التحميل... انتظر لحظة")
+    
+    # تحديد ملف الكوكيز
+    cookie_file = "youtube_cookies.txt" if "youtube" in url or "youtu.be" in url else None
+    
+    # إعدادات الجودة حسب اختيارك (فيديو أو صوت)
+    if format_type == "vid":
+        # جودة 720p أو أقل لضمان الدمج السريع
+        ydl_opts = {
+            'format': 'best[height<=720][ext=mp4]/best[ext=mp4]/best',
+            'outtmpl': f'video_{chat_id}.%(ext)s',
+            'cookiefile': cookie_file,
+            'quiet': True
+        }
+    else:
+        # إعدادات الصوت
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': f'audio_{chat_id}.%(ext)s',
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+            'cookiefile': cookie_file,
+            'quiet': True
+        }
 
     try:
         with YoutubeDL(ydl_opts) as ydl:
-            bot.edit_message_text("📥 جاري تحميل الفيديو...", chat_id, status_msg.message_id)
+            bot.edit_message_text("📥 جاري تحميل الملف من السيرفر...", chat_id, status_msg.message_id)
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
             
-            bot.edit_message_text("📤 جاري الرفع إلى تلجرام...", chat_id, status_msg.message_id)
-            with open(filename, 'rb') as video:
-                bot.send_video(chat_id, video, caption="✅ تم التحميل بواسطة بوت مصطفى")
-            
-            if os.path.exists(filename): os.remove(filename)
-            bot.delete_message(chat_id, status_msg.message_id)
-            
-    except Exception as e:
-        bot.edit_message_text(f"❌ فشل التحميل.\nتأكد من أن الفيديو عام وحجمه أقل من 50MB.", chat_id, status_msg.message_id)
+            # لو كان صوت، الامتداد حيتغير لـ mp3 بواسطة الـ postprocessor
+            if format_type == "aud":
+                filename = filename.rsplit('.', 1)[0] + '.mp3'
 
+        with open(filename, 'rb') as f:
+            bot.edit_message_text("✅ جاري إرسال الملف إليك...", chat_id, status_msg.message_id)
+            if format_type == "vid":
+                bot.send_video(chat_id, f)
+            else:
+                bot.send_audio(chat_id, f)
+        
+        os.remove(filename) # مسح الملف بعد الإرسال لتوفير المساحة
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ حصل خطأ: {str(e)}")
+https://youtube.com/shorts/8KlcVWJqd80?si=Nx3dn-rkcmKeziSS
 if __name__ == "__main__":
-    print("🚀 البوت انطلق بأحدث نسخة!")
+    print("🚀 البوت انطلق بأحدث نسخة")
     bot.infinity_polling()
+
