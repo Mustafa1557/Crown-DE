@@ -172,8 +172,6 @@ def handle_query(call):
         os.remove(filename) # مسح الملف بعد الإرسال لتوفير المساحة
     except Exception as e:
         bot.send_message(chat_id, f"❌ حصل خطأ: {str(e)}")
-https://youtube.com/shorts/8KlcVWJqd80?si=Nx3dn-rkcmKeziSS
 if __name__ == "__main__":
     print("🚀 البوت انطلق بأحدث نسخة")
     bot.infinity_polling()
-
