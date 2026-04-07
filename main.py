@@ -178,19 +178,21 @@ def start_download(message, f_type, res, url_id):
         
         # إعدادات الصيغة لضمان الحصول على ملف مدموج
         if f_type == "vid":
-            fmt = f"bestvideo[height<={current_res}][ext=mp4]+bestaudio[ext=m4a]/best[height<={current_res}][ext=mp4]/best"
+            # السطر السحري اللي بيحل مشاكل يوتيوب
+            fmt = f"best[height<={current_res}][ext=mp4]/best[height<={current_res}]/best"
         else:
             fmt = "bestaudio/best"
 
         opts = {
             'format': fmt,
-            'merge_output_format': 'mp4' if f_type == "vid" else None,
             'outtmpl': f'file_{chat_id}_{url_id}.%(ext)s',
             'cookiefile': cookie_file,
             'quiet': True,
             'no_warnings': True,
+            'nocheckcertificate': True, # إضافة لتجاوز مشاكل الشهادات
             'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
+
         if f_type == "aud":
             opts['postprocessors'] = [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3'}]
 
