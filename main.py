@@ -18,8 +18,8 @@ threading.Thread(target=run_flask).start()
 
 # --- 2. إعدادات الكوكيز برمجياً (لحل مشكلة الملفات الخارجية) ---
 def setup_cookies():
-    # كوكيز يوتيوب: ضع النص الذي يبدأ بـ # Netscape هنا
-        youtube_content = """# Netscape HTTP Cookie File
+    # 1. كوكيز يوتيوب
+    youtube_content = """# Netscape HTTP Cookie File
 .youtube.com	TRUE	/	TRUE	0	__Secure-1PAPISID	_JkIC-y0k06opf5L/At5GKMur37iwLAHhQ
 .youtube.com	TRUE	/	TRUE	0	__Secure-1PSID	g.a0008ghP3HptOAg-tcVx9h7tUfGCNofRyHB2cvPSjJ_D8OIlK3eVgEuJmme-prAlKwVdrohjlQACgYKAcASARUSFQHGX2MiF3d2UR1-JX_LslvTIZjIGhoVAUF8yKoVtCq1vSyaNwU6y8b_fbDu0076
 .youtube.com	TRUE	/	TRUE	0	__Secure-1PSIDCC	AKEyXzVfiqh8kfPfzsDSxBxqIoVQQBUDHBcSi4tWQCH3JLsUYNBh0PHcwuuC8rpviYFF9HmZ
@@ -41,6 +41,8 @@ def setup_cookies():
 .youtube.com	TRUE	/	TRUE	0	VISITOR_PRIVACY_METADATA	CgJTRBIEGgAgGQ%3D%3D
 .youtube.com	TRUE	/	TRUE	0	YSC	nJRgcJ49n5g
 """
+
+    # 2. كوكيز تيك توك (التي أرسلتها الآن)
     tiktok_content = """# Netscape HTTP Cookie File
 .tiktok.com	TRUE	/	TRUE	0	cmpl_token	AgQYAPMJ_hfkTtK57OKAqT9dLPOzk2MLSf-FgmCgGM8
 .tiktok.com	TRUE	/	FALSE	0	d_ticket	66781a2e29eb3bab6d994138f48c604829cf8
@@ -72,9 +74,9 @@ www.tiktok.com	FALSE	/	FALSE	0	last_login_method	email
 www.tiktok.com	FALSE	/	FALSE	0	msToken	v7UIAVMPFxwaWUJMZkBsG-mGWiD5JH2MOf0vS9-CXWPYylnwbN88MrWtuGePZs8x2WkSq9KjQ-eaI4peCFmYCJlBczqkZjUB-jieHwfnORJix9WEwfdv43reEJvJ0T_xqVz0s6rzxwHwBDBGhHVHyM4=
 www.tiktok.com	FALSE	/	FALSE	0	tt_ticket_guard_has_set_public_key	1
 """
-    # كوكيز فيسبوك: ضع النص الذي يبدأ بـ # Netscape هنا
-    facebook_content = """
-# Netscape HTTP Cookie File
+
+    # 3. كوكيز فيسبوك (التي أرسلتها الآن)
+    facebook_content = """# Netscape HTTP Cookie File
 .facebook.com	TRUE	/	TRUE	0	c_user	61578432281821
 .facebook.com	TRUE	/	TRUE	0	datr	ov7RafLXMN7nF8yPiOj296DI
 .facebook.com	TRUE	/	TRUE	0	fr	1io1XxJ1wdmRwVXX6.AWfYSkkTRPJ6IW0wqU7mxgYGfoM0ejbUKq-q5DSoa3zKyfHb-6c.Bp1M2W..AAA.0.0.Bp1UkH.AWf3JVaD8VHqKUiJnoxEvCzbaVM
@@ -84,14 +86,18 @@ www.tiktok.com	FALSE	/	FALSE	0	tt_ticket_guard_has_set_public_key	1
 .facebook.com	TRUE	/	TRUE	0	wd	1366x657
 .facebook.com	TRUE	/	TRUE	0	xs	18%3A64VMFI-lT93ZYQ%3A2%3A1775370710%3A-1%3A-1%3A%3AAcxTfv2g_XnJwaovZfcmACmLb7V3m8txoPqRuLa-Ow
 """
-    
+
+    # حفظ الملفات داخل السيرفر
     with open("youtube_cookies.txt", "w", encoding="utf-8") as f:
         f.write(youtube_content.strip())
+    with open("tiktok_cookies.txt", "w", encoding="utf-8") as f:
+        f.write(tiktok_content.strip())
     with open("facebook_cookies.txt", "w", encoding="utf-8") as f:
         f.write(facebook_content.strip())
-    print("✅ تم توليد ملفات الكوكيز بنجاح داخل السيرفر.")
+    print("✅ تم تجهيز جميع الملفات بنجاح.")
 
 setup_cookies()
+
 
 # --- 3. إعدادات البوت ---
 API_TOKEN = os.getenv('BOT_TOKEN')
