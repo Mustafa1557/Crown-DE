@@ -104,74 +104,72 @@ API_TOKEN = os.getenv('BOT_TOKEN')
 ADMIN_ID = 8168754101 # معرف مصطفى للمراقبة
 bot = telebot.TeleBot(API_TOKEN)
 
+# مخزن مؤقت للروابط عشان ما نتخطى حد الـ 64 حرف في الأزرار
+url_storage = {}
+
 @bot.message_handler(func=lambda message: True)
 def ask_format(message):
     url = message.text
     if not url.startswith('http'):
-        bot.reply_to(message, "أرسل رابطاً صالحاً يا مصطفى! 🔗")
         return
 
+    # حفظ الرابط برقم تعريفي بسيط
+    url_id = str(len(url_storage) + 1)
+    url_storage[url_id] = url
+
     markup = telebot.types.InlineKeyboardMarkup()
-    # بنخزن الرابط والنوع في الـ callback_data
-    btn_video = telebot.types.InlineKeyboardButton("🎬 تحميل فيديو", callback_data=f"vid|{url}")
-    btn_audio = telebot.types.InlineKeyboardButton("🎵 تحميل صوت MP3", callback_data=f"aud|{url}")
+    # بنرسل الـ ID بس (مثلاً vid|1) بدلاً من الرابط الكامل
+    btn_video = telebot.types.InlineKeyboardButton("🎬 تحميل فيديو", callback_data=f"vid|{url_id}")
+    btn_audio = telebot.types.InlineKeyboardButton("🎵 تحميل صوت MP3", callback_data=f"aud|{url_id}")
     
     markup.add(btn_video, btn_audio)
     bot.reply_to(message, "ممتاز، اختار داير تحمل شنو:", reply_markup=markup)
+
 @bot.callback_query_handler(func=lambda call: True)
 def handle_query(call):
-    # تقسيم البيانات (النوع والرابط)
-    format_type, url = call.data.split("|")
-    chat_id = call.message.chat.id
+    # استخراج النوع والـ ID
+    format_type, url_id = call.data.split("|")
+    url = url_storage.get(url_id) # استرجاع الرابط الأصلي من المخزن
     
-    status_msg = bot.send_message(chat_id, "⏳ جاري البدء في التحميل... انتظر لحظة")
+    if not url:
+        bot.answer_callback_query(call.id, "❌ عذراً، الرابط انتهت صلاحيته.")
+        return
+
+    chat_id = call.message.chat.id
+    status_msg = bot.send_message(chat_id, "⏳ جاري المعالجة... انتظر لحظة")
     
     # تحديد ملف الكوكيز
     cookie_file = "youtube_cookies.txt" if "youtube" in url or "youtu.be" in url else None
     
-    # إعدادات الجودة حسب اختيارك (فيديو أو صوت)
-    if format_type == "vid":
-        # جودة 720p أو أقل لضمان الدمج السريع
-        ydl_opts = {
-            'format': 'best[height<=720][ext=mp4]/best[ext=mp4]/best',
-            'outtmpl': f'video_{chat_id}.%(ext)s',
-            'cookiefile': cookie_file,
-            'quiet': True
-        }
-    else:
-        # إعدادات الصوت
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'outtmpl': f'audio_{chat_id}.%(ext)s',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-            'cookiefile': cookie_file,
-            'quiet': True
-        }
+    # إعدادات محسنة لتجنب الحظر
+    ydl_opts = {
+        'format': 'best[height<=720][ext=mp4]/best' if format_type == "vid" else 'bestaudio/best',
+        'outtmpl': f'file_{chat_id}_{url_id}.%(ext)s',
+        'cookiefile': cookie_file,
+        'quiet': True,
+        'no_warnings': True,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+
+    if format_type == "aud":
+        ydl_opts['postprocessors'] = [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3','preferredquality': '192'}]
 
     try:
         with YoutubeDL(ydl_opts) as ydl:
-            bot.edit_message_text("📥 جاري تحميل الملف من السيرفر...", chat_id, status_msg.message_id)
+            bot.edit_message_text("📥 جاري التحميل من السيرفر...", chat_id, status_msg.message_id)
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
-            
-            # لو كان صوت، الامتداد حيتغير لـ mp3 بواسطة الـ postprocessor
-            if format_type == "aud":
-                filename = filename.rsplit('.', 1)[0] + '.mp3'
+            if format_type == "aud": filename = filename.rsplit('.', 1)[0] + '.mp3'
 
         with open(filename, 'rb') as f:
-            bot.edit_message_text("✅ جاري إرسال الملف إليك...", chat_id, status_msg.message_id)
-            if format_type == "vid":
-                bot.send_video(chat_id, f)
-            else:
-                bot.send_audio(chat_id, f)
+            bot.edit_message_text("✅ جاري الرفع لتلجرام...", chat_id, status_msg.message_id)
+            if format_type == "vid": bot.send_video(chat_id, f)
+            else: bot.send_audio(chat_id, f)
         
-        os.remove(filename) # مسح الملف بعد الإرسال لتوفير المساحة
+        os.remove(filename)
+        bot.delete_message(chat_id, status_msg.message_id)
     except Exception as e:
         bot.send_message(chat_id, f"❌ حصل خطأ: {str(e)}")
 if __name__ == "__main__":
-    print("🚀 البوت انطلق بأحدث نسخة")
+    print("🚀 البوت انطلق بأحدث نسخة...")
     bot.infinity_polling()
