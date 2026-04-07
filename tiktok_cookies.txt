@@ -1,3 +1,4 @@
+# Netscape HTTP Cookie File
 .tiktok.com	TRUE	/	TRUE	0	cmpl_token	AgQYAPMJ_hfkTtK57OKAqT9dLPOzk2MLSf-FgmCgGM8
 .tiktok.com	TRUE	/	FALSE	0	d_ticket	66781a2e29eb3bab6d994138f48c604829cf8
 .tiktok.com	TRUE	/	TRUE	0	msToken	E3tvuZbICpXjllOcFQHsOVxh70GMWt-AYagFdUJOPbCcRB3aNo3r3tN6TZvTbF0Td3FNJEFNemNZebMWf192J3dICLpzArMhw2RddmUX4COuj_VCHyXJqpXJM7U7_PbDCBLmqrYmTUngqxE59hLWM3s=
