@@ -120,7 +120,7 @@ def download_video(message):
     if "youtube" in url or "youtu.be" in url:
         cookie_file = "youtube_cookies.txt"
     elif "tiktok.com" in url:
-    cookie_file = "tiktok_cookies.txt"
+        cookie_file = "tiktok_cookies.txt"
    
     elif "facebook" in url or "fb.watch" in url:
         cookie_file = "facebook_cookies.txt"
