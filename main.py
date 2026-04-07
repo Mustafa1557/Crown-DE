@@ -6,103 +6,90 @@ from yt_dlp import YoutubeDL
 
 # --- 1. إعداد السيرفر الوهمي (منع النوم) ---
 app = Flask('')
-
 @app.route('/')
 def home():
-    return "البوت شغال بنجاح! 🚀"
+    return "البوت شغال بأفضل إعدادات! 🚀"
 
 def run_flask():
-    # ريندر بيحدد الـ Port تلقائياً
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port)
 
-# تشغيل السيرفر في خلفية الكود
 threading.Thread(target=run_flask).start()
 
-# --- 2. إعدادات البوت والمراقبة ---
+# --- 2. إعدادات البوت ---
 API_TOKEN = os.getenv('BOT_TOKEN')
-# تم تعديل الآيدي الخاص بك هنا يا مصطفى للمراقبة
-ADMIN_ID = 8168754101 
-
+ADMIN_ID = 8168754101 # آيدي مصطفى للمراقبة
 bot = telebot.TeleBot(API_TOKEN)
 
-# --- 3. رسالة الترحيب المعدلة ---
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    user_name = message.from_user.first_name
-    welcome_text = (
-        f"أهلاً بك يا {user_name} في بوت التحميل الذكي! 📥\n\n"
-        "أرسل لي أي رابط فيديو من:\n"
-        "✅ يوتيوب\n✅ فيسبوك\n✅ تيك توك\n✅ إنستغرام\n\n"
-        "وسأقوم بتحميله لك فوراً وبأعلى جودة! 🔥"
-    )
-    bot.reply_to(message, welcome_text)
-    
-    # إشعار لك (المالك) عند دخول مستخدم جديد
-    try:
-        bot.send_message(ADMIN_ID, f"🔔 مستخدم جديد دخل البوت:\n👤 الاسم: {user_name}\n🆔 الآيدي: {message.from_user.id}")
-    except:
-        pass
-
-# --- 4. معالجة التحميل (تعديل الرسالة تلقائياً) ---
+# --- 3. معالجة التحميل الذكي ---
 @bot.message_handler(func=lambda message: True)
 def download_video(message):
     url = message.text
     chat_id = message.chat.id
-    
+    user = message.from_user
+
     if not url.startswith('http'):
-        bot.reply_to(message, "الرجاء إرسال رابط صحيح يبدأ بـ http ❌")
+        bot.reply_to(message, "الرجاء إرسال رابط صحيح! ❌")
         return
 
-    # إشعار لك عند بدء أي عملية تحميل
+    # إشعار للمالك (مصطفى) فيه تفاصيل المستخدم والحالة
+    status_info = "متصل ✅"
+    log_msg = (
+        f"📥 محاولة تحميل جديدة:\n"
+        f"👤 الاسم: {user.first_name}\n"
+        f"🆔 الآيدي: {user.id}\n"
+        f"🌐 اللغة: {user.language_code}\n"
+        f"📡 الحالة: {status_info}\n"
+        f"🔗 الرابط: {url}"
+    )
     try:
-        bot.send_message(ADMIN_ID, f"📥 {message.from_user.first_name} يحمل فيديو:\n{url}")
+        bot.send_message(ADMIN_ID, log_msg)
     except:
         pass
 
-    # رسالة الحالة الأولية
-    status_msg = bot.reply_to(message, "جاري فحص الرابط... ⏳")
+    status_msg = bot.reply_to(message, "جاري فحص الرابط وتطبيق الكوكيز... ⏳")
     
+    # تحديد ملف الكوكيز بناءً على الموقع
+    cookie_file = None
+    if "youtube.com" in url or "youtu.be" in url:
+        cookie_file = "youtube_cookies.txt"
+    elif "tiktok.com" in url:
+        cookie_file = "tiktok_cookies.txt"
+    elif "facebook.com" in url or "fb.watch" in url:
+        cookie_file = "facebook_cookies.txt"
+
     ydl_opts = {
         'format': 'best',
         'outtmpl': f'video_{chat_id}.%(ext)s',
-        'max_filesize': 48 * 1024 * 1024,
+        'max_filesize': 48 * 1024 * 1024, # حد التلغرام 48 ميجا
         'quiet': True,
         'no_warnings': True,
     }
-    
+
+    # تفعيل الكوكيز إذا كان الملف موجوداً
+    if cookie_file and os.path.exists(cookie_file):
+        ydl_opts['cookiefile'] = cookie_file
+
     try:
         with YoutubeDL(ydl_opts) as ydl:
-            # تعديل نص الرسالة السابقة بدلاً من إرسال رسالة جديدة
-            bot.edit_message_text("جاري التحميل من المصدر... 📥", chat_id, status_msg.message_id)
-            
+            bot.edit_message_text("جاري استخراج الفيديو بأعلى جودة... 📥", chat_id, status_msg.message_id)
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
             
             bot.edit_message_text("جاري الرفع إلى تلجرام... 📤", chat_id, status_msg.message_id)
-            
             with open(filename, 'rb') as video:
-                bot.send_video(chat_id, video, caption="تم التحميل بنجاح! ✅")
-                # حذف رسالة الحالة بعد اكتمال الرفع لنظافة المحادثة
+                bot.send_video(chat_id, video, caption="✅ تم التحميل بنجاح!")
                 bot.delete_message(chat_id, status_msg.message_id)
             
-            if os.path.exists(filename):
-                os.remove(filename)
+            if os.path.exists(filename): os.remove(filename)
             
     except Exception as e:
-        error_msg = str(e)
-        if "File is too big" in error_msg:
-            bot.edit_message_text("❌ عذراً، حجم الفيديو أكبر من 50 ميجا.", chat_id, status_msg.message_id)
-        else:
-            bot.edit_message_text(f"❌ حدث خطأ. تأكد من الرابط أو حاول لاحقاً.", chat_id, status_msg.message_id)
-        
-        if 'filename' in locals() and os.path.exists(filename):
-            os.remove(filename)
+        error_text = "❌ حدث خطأ: قد يكون حجم الفيديو كبيراً جداً أو الرابط غير مدعوم."
+        bot.edit_message_text(error_text, chat_id, status_msg.message_id)
+        if 'filename' in locals() and os.path.exists(filename): os.remove(filename)
 
-# --- 5. تشغيل البوت مع حل مشكلة الـ Conflict ---
+# --- 4. تشغيل البوت ---
 if __name__ == "__main__":
-    # مسح الـ Webhook لضمان عدم حدوث تضارب (Conflict)
     bot.remove_webhook()
-    print("البوت شغال بأفضل إعدادات! 🔥")
-    # استخدام infinity_polling لضمان استقرار الاتصال
+    print("البوت شغال وجاهز بكل الكوكيز! 🔥")
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
