@@ -16,6 +16,48 @@ def run_flask():
 
 threading.Thread(target=run_flask).start()
 
+from supabase import create_client
+import datetime
+
+# بيانات الربط (بتلقاها في إعدادات Supabase - API)
+SUPABASE_URL = "رابط_مشروعك_هنا"
+SUPABASE_KEY = "مفتاح_API_هنا"
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+def register_or_update_user(message):
+    user_id = str(message.from_user.id)
+    username = message.from_user.username or "Unknown"
+    first_name = message.from_user.first_name or "User"
+
+    # محاولة تسجيل المستخدم أو تحديث بياناته
+    user_data = {
+        "user_id": user_id,
+        "username": username,
+        "first_name": first_name
+    }
+    # upsert بتسجل المستخدم لو جديد، ولو موجود بتحدث بياناته بس ما بتغير حالة الـ VIP
+    supabase.table("users").upsert(user_data, on_conflict="user_id").execute()
+
+def check_vip_status(user_id):
+    # جلب بيانات المستخدم
+    response = supabase.table("users").select("is_vip, subscription_end").eq("user_id", str(user_id)).execute()
+    
+    if response.data:
+        user = response.data[0]
+        if user['is_vip']:
+            # التأكد إذا الاشتراك لسه شغال (ما انتهى الشهر)
+            if user['subscription_end']:
+                expiry = datetime.datetime.fromisoformat(user['subscription_end'].replace('Z', '+00:00'))
+                if datetime.datetime.now(datetime.timezone.utc) < expiry:
+                    return True
+                else:
+                    # لو انتهى الوقت، نلغي الـ VIP تلقائياً
+                    supabase.table("users").update({"is_vip": False}).eq("user_id", str(user_id)).execute()
+                    return False
+            return True # لو VIP وما عنده تاريخ انتهاء (اشتراك أبدي)
+    return False
+
+
 # --- 2. إعدادات الكوكيز برمجياً (لحل مشكلة الملفات الخارجية) ---
 def setup_cookies():
     # 1. كوكيز يوتيوب
@@ -103,33 +145,52 @@ setup_cookies()
 API_TOKEN = os.getenv('BOT_TOKEN')
 ADMIN_ID = 8168754101 # معرف مصطفى للمراقبة
 bot = telebot.TeleBot(API_TOKEN)
+
 # 1. مخزن الروابط
 url_storage = {}
 
-# 2. استقبال الرابط
+# 2. استقبال الرابط وتصنيفه
 @bot.message_handler(func=lambda message: True)
 def ask_format(message):
     url = message.text
     if not url.startswith('http'):
         return
 
+    # تسجيل المستخدم في قاعدة البيانات
+    try:
+        register_or_update_user(message)
+    except:
+        pass
+
     url_id = str(len(url_storage) + 1)
     url_storage[url_id] = url
 
-    # إذا كان الرابط من تيك توك، تحميل تلقائي بأعلى جودة
+    # --- شروط الروابط الذكية ---
+
+    # 1. تيك توك: تحميل تلقائي مباشر (بدون أزرار جودة)
     if "tiktok.com" in url:
-        start_download(message, "vid", "best", url_id, is_tiktok=True)
+        start_download(message, "vid", "best", url_id, is_direct=True)
         return
 
-    # للمنصات التانية (يوتيوب وفيسبوك)، نسأل عن النوع والجودة
-    markup = telebot.types.InlineKeyboardMarkup()
-    markup.add(
-        telebot.types.InlineKeyboardButton("🎬 فيديو", callback_data=f"type|vid|{url_id}"),
-        telebot.types.InlineKeyboardButton("🎵 صوت MP3", callback_data=f"type|aud|{url_id}")
-    )
-    bot.reply_to(message, "اختار النوع اللي عاوزه:", reply_markup=markup)
+    # 2. إنستغرام وفيسبوك وتويتر: تحميل فيديو مباشر (أعلى جودة مدمجة)
+    elif any(domain in url for domain in ["instagram.com", "facebook.com", "fb.watch", "x.com", "twitter.com"]):
+        start_download(message, "vid", "best", url_id, is_direct=True)
+        return
 
-# 3. معالجة الضغطات
+    # 3. يوتيوب: لازم نطلب الجودة ونشيك على الـ VIP
+    elif "youtube.com" in url or "youtu.be" in url:
+        markup = telebot.types.InlineKeyboardMarkup()
+        markup.add(
+            telebot.types.InlineKeyboardButton("🎬 فيديو", callback_data=f"type|vid|{url_id}"),
+            telebot.types.InlineKeyboardButton("🎵 صوت MP3", callback_data=f"type|aud|{url_id}")
+        )
+        bot.reply_to(message, "🎬 يوتيوب: اختار النوع اللي عاوزه:", reply_markup=markup)
+    
+    # 4. أي موقع آخر يدعمه yt-dlp
+    else:
+        start_download(message, "vid", "best", url_id, is_direct=True)
+
+# 3. معالجة خيارات يوتيوب
 @bot.callback_query_handler(func=lambda call: True)
 def handle_query(call):
     data = call.data.split("|")
@@ -141,37 +202,41 @@ def handle_query(call):
         f_type, url_id = data[1], data[2]
         url = url_storage.get(url_id)
         
-        if f_type == "vid" and ("youtube" in url or "youtu.be" in url or "facebook" in url or "fb.watch" in url):
+        # حماية يوتيوب: التشيك على الـ VIP
+        if "youtube" in url or "youtu.be" in url:
+            if not check_vip_status(call.from_user.id):
+                bot.send_message(call.message.chat.id, "⚠️ عذراً، خدمة يوتيوب متاحة حالياً للمشتركين المميزين (VIP) فقط.\n\nللاشتراك تواصل مع المطور: [ضع رابط حسابك هنا]")
+                return
+
+        if f_type == "vid":
             markup = telebot.types.InlineKeyboardMarkup()
             markup.add(
                 telebot.types.InlineKeyboardButton("720p", callback_data=f"quality|720|{url_id}"),
                 telebot.types.InlineKeyboardButton("480p", callback_data=f"quality|480|{url_id}"),
                 telebot.types.InlineKeyboardButton("360p", callback_data=f"quality|360|{url_id}")
             )
-            bot.send_message(call.message.chat.id, "اختار الجودة المفضلة:", reply_markup=markup)
+            bot.send_message(call.message.chat.id, "اختار جودة الفيديو:", reply_markup=markup)
         else:
-            start_download(call.message, f_type, "best", url_id)
+            start_download(call.message, "aud", "best", url_id)
 
     elif action == "quality":
         res, url_id = data[1], data[2]
         start_download(call.message, "vid", res, url_id)
 
-# 4. دالة التحميل الذكية
-def start_download(message, f_type, res, url_id, is_tiktok=False):
+# 4. دالة التحميل النهائية الشاملة
+def start_download(message, f_type, res, url_id, is_direct=False):
     chat_id = message.chat.id
     url = url_storage.get(url_id)
     
-    # تخصيص رسالة تيك توك
-    msg_text = "⏳ جاري تنفيذ طلبك..." if is_tiktok else "⏳ جاري محاولة التحميل... انتظر"
-    status_msg = bot.send_message(chat_id, msg_text)
+    # رسالة ترحيبية ذكية
+    status_text = "⏳ جاري تنفيذ طلبك..." if is_direct else "⏳ جاري محاولة التحميل... انتظر"
+    status_msg = bot.send_message(chat_id, status_text)
 
-    cookie_file = "youtube_cookies.txt" if "youtube" in url or "youtu.be" in url else None
+    cookie_file = "youtube_cookies.txt" if ("youtube" in url or "youtu.be" in url) else None
     
+    # إعدادات الجودة
     if f_type == "vid":
-        if is_tiktok or res == "best":
-            qualities = ['best']
-        else:
-            qualities = [res, '480', '360']
+        qualities = ['best'] if is_direct else [res, '480', '360']
     else:
         qualities = ['bestaudio']
 
@@ -180,11 +245,11 @@ def start_download(message, f_type, res, url_id, is_tiktok=False):
         if success: break
         
         if f_type == "vid":
-            # صيغة تيك توك أو يوتيوب الذكية
-            if is_tiktok:
-                fmt = "bestvideo+bestaudio/best"
-            else:
+            # صيغة ذكية لليوتيوب وغيره
+            if "youtube" in url or "youtu.be" in url:
                 fmt = f"best[height<={current_res}][ext=mp4]/best[ext=mp4]/best"
+            else:
+                fmt = "bestvideo+bestaudio/best" # للمواقع التانية دايماً أعلى حاجة
             
             opts = {
                 'format': fmt,
@@ -192,7 +257,7 @@ def start_download(message, f_type, res, url_id, is_tiktok=False):
                 'cookiefile': cookie_file,
                 'nocheckcertificate': True,
                 'quiet': True,
-                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             }
         else:
             opts = {
@@ -210,19 +275,17 @@ def start_download(message, f_type, res, url_id, is_tiktok=False):
                 
                 success = True
                 with open(filename, 'rb') as f:
-                    if not is_tiktok:
-                        bot.edit_message_text("✅ جاري الرفع لتلجرام...", chat_id, status_msg.message_id)
-                    
                     if f_type == "vid": bot.send_video(chat_id, f)
                     else: bot.send_audio(chat_id, f)
                 
                 os.remove(filename)
                 bot.delete_message(chat_id, status_msg.message_id)
-        except:
+        except Exception as e:
+            print(f"فشلت محاولة: {str(e)}")
             continue
 
     if not success:
-        bot.edit_message_text("❌ عذراً، فشل التحميل.", chat_id, status_msg.message_id)
+        bot.edit_message_text("❌ عذراً، فشل التحميل. قد يكون الرابط خاصاً أو غير مدعوم حالياً.", chat_id, status_msg.message_id)
 
 if __name__ == "__main__":
     bot.infinity_polling()
