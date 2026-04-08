@@ -103,42 +103,44 @@ setup_cookies()
 API_TOKEN = os.getenv('BOT_TOKEN')
 ADMIN_ID = 8168754101 # معرف مصطفى للمراقبة
 bot = telebot.TeleBot(API_TOKEN)
-
- # 1. مخزن الروابط لتجاوز حد الـ 64 حرف في الأزرار
+# 1. مخزن الروابط
 url_storage = {}
 
-# 2. دالة استقبال الرابط (الأزرار الشفافة الأولية)
+# 2. استقبال الرابط
 @bot.message_handler(func=lambda message: True)
 def ask_format(message):
     url = message.text
     if not url.startswith('http'):
         return
 
-    # تخزين الرابط برقم تعريفي
     url_id = str(len(url_storage) + 1)
     url_storage[url_id] = url
 
+    # إذا كان الرابط من تيك توك، تحميل تلقائي بأعلى جودة
+    if "tiktok.com" in url:
+        start_download(message, "vid", "best", url_id, is_tiktok=True)
+        return
+
+    # للمنصات التانية (يوتيوب وفيسبوك)، نسأل عن النوع والجودة
     markup = telebot.types.InlineKeyboardMarkup()
-    btn_video = telebot.types.InlineKeyboardButton("🎬 فيديو", callback_data=f"type|vid|{url_id}")
-    btn_audio = telebot.types.InlineKeyboardButton("🎵 صوت MP3", callback_data=f"type|aud|{url_id}")
-    
-    markup.add(btn_video, btn_audio)
+    markup.add(
+        telebot.types.InlineKeyboardButton("🎬 فيديو", callback_data=f"type|vid|{url_id}"),
+        telebot.types.InlineKeyboardButton("🎵 صوت MP3", callback_data=f"type|aud|{url_id}")
+    )
     bot.reply_to(message, "اختار النوع اللي عاوزه:", reply_markup=markup)
 
-# 3. معالجة الضغطات وإخفاء الأزرار
+# 3. معالجة الضغطات
 @bot.callback_query_handler(func=lambda call: True)
 def handle_query(call):
     data = call.data.split("|")
-    action = data[0] # type أو quality
+    action = data[0]
     
-    # إخفاء الأزرار فوراً لتنظيف المحادثة
     bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
 
     if action == "type":
         f_type, url_id = data[1], data[2]
         url = url_storage.get(url_id)
         
-        # إذا كان يوتيوب أو فيسبوك، نطلب تحديد الجودة
         if f_type == "vid" and ("youtube" in url or "youtu.be" in url or "facebook" in url or "fb.watch" in url):
             markup = telebot.types.InlineKeyboardMarkup()
             markup.add(
@@ -148,26 +150,28 @@ def handle_query(call):
             )
             bot.send_message(call.message.chat.id, "اختار الجودة المفضلة:", reply_markup=markup)
         else:
-            # للصوت أو المنصات الأخرى، تحميل مباشر بأفضل جودة
             start_download(call.message, f_type, "best", url_id)
 
     elif action == "quality":
         res, url_id = data[1], data[2]
         start_download(call.message, "vid", res, url_id)
 
-# 4. دالة التحميل الذكية (Fallback System)
-def start_download(message, f_type, res, url_id):
+# 4. دالة التحميل الذكية
+def start_download(message, f_type, res, url_id, is_tiktok=False):
     chat_id = message.chat.id
     url = url_storage.get(url_id)
-    status_msg = bot.send_message(chat_id, "⏳ جاري محاولة التحميل... انتظر")
+    
+    # تخصيص رسالة تيك توك
+    msg_text = "⏳ جاري تنفيذ طلبك..." if is_tiktok else "⏳ جاري محاولة التحميل... انتظر"
+    status_msg = bot.send_message(chat_id, msg_text)
 
     cookie_file = "youtube_cookies.txt" if "youtube" in url or "youtu.be" in url else None
     
-    # قائمة الجودات للتجربة بالترتيب
     if f_type == "vid":
-        if res == "720": qualities = ['720', '480', '360', '240']
-        elif res == "480": qualities = ['480', '360', '240']
-        else: qualities = ['360', '240']
+        if is_tiktok or res == "best":
+            qualities = ['best']
+        else:
+            qualities = [res, '480', '360']
     else:
         qualities = ['bestaudio']
 
@@ -175,46 +179,50 @@ def start_download(message, f_type, res, url_id):
     for current_res in qualities:
         if success: break
         
-        # التعديل هنا: السطر ده بيجرب كل الاحتمالات عشان يحل مشكلة يوتيوب
         if f_type == "vid":
-            fmt = f"bestvideo[height<={current_res}][ext=mp4]+bestaudio[ext=m4a]/best[height<={current_res}][ext=mp4]/best"
+            # صيغة تيك توك أو يوتيوب الذكية
+            if is_tiktok:
+                fmt = "bestvideo+bestaudio/best"
+            else:
+                fmt = f"best[height<={current_res}][ext=mp4]/best[ext=mp4]/best"
+            
+            opts = {
+                'format': fmt,
+                'outtmpl': f'file_{chat_id}_{url_id}.%(ext)s',
+                'cookiefile': cookie_file,
+                'nocheckcertificate': True,
+                'quiet': True,
+                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
         else:
-            fmt = "bestaudio/best"
-
-        opts = {
-            'format': fmt,
-            'outtmpl': f'file_{chat_id}_{url_id}.%(ext)s',
-            'cookiefile': cookie_file,
-            'quiet': True,
-            'no_warnings': True,
-            'nocheckcertificate': True, 
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-
-        if f_type == "aud":
-            opts['postprocessors'] = [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3'}]
+            opts = {
+                'format': 'bestaudio/best',
+                'outtmpl': f'file_{chat_id}_{url_id}.%(ext)s',
+                'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3'}],
+                'cookiefile': cookie_file
+            }
 
         try:
             with YoutubeDL(opts) as ydl:
-                bot.edit_message_text(f"📥 جاري التحميل بجودة {current_res}p...", chat_id, status_msg.message_id)
                 info = ydl.extract_info(url, download=True)
                 filename = ydl.prepare_filename(info)
                 if f_type == "aud": filename = filename.rsplit('.', 1)[0] + '.mp3'
                 
                 success = True
                 with open(filename, 'rb') as f:
-                    bot.edit_message_text("✅ جاري الرفع لتلجرام...", chat_id, status_msg.message_id)
+                    if not is_tiktok:
+                        bot.edit_message_text("✅ جاري الرفع لتلجرام...", chat_id, status_msg.message_id)
+                    
                     if f_type == "vid": bot.send_video(chat_id, f)
                     else: bot.send_audio(chat_id, f)
+                
                 os.remove(filename)
                 bot.delete_message(chat_id, status_msg.message_id)
-        except Exception as e:
-            print(f"فشلت جودة {current_res}: {str(e)}")
-            continue # تجربة الجودة التالية
+        except:
+            continue
 
     if not success:
-        bot.edit_message_text("❌ عذراً، فشل التحميل بجميع الجودات المتاحة.", chat_id, status_msg.message_id)
+        bot.edit_message_text("❌ عذراً، فشل التحميل.", chat_id, status_msg.message_id)
 
-# 5. تشغيل البوت النهائي
 if __name__ == "__main__":
     bot.infinity_polling()
