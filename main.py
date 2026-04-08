@@ -104,8 +104,7 @@ API_TOKEN = os.getenv('BOT_TOKEN')
 ADMIN_ID = 8168754101 # معرف مصطفى للمراقبة
 bot = telebot.TeleBot(API_TOKEN)
 
- 
-# 1. مخزن الروابط لتجاوز حد الـ 64 حرف في الأزرار
+ # 1. مخزن الروابط لتجاوز حد الـ 64 حرف في الأزرار
 url_storage = {}
 
 # 2. دالة استقبال الرابط (الأزرار الشفافة الأولية)
@@ -147,7 +146,7 @@ def handle_query(call):
                 telebot.types.InlineKeyboardButton("480p", callback_data=f"quality|480|{url_id}"),
                 telebot.types.InlineKeyboardButton("360p", callback_data=f"quality|360|{url_id}")
             )
-            bot.send_message(call.message.chat.id, "اختار الجودة المفضلة (سيتم تجربة الأقل إذا لم تتوفر):", reply_markup=markup)
+            bot.send_message(call.message.chat.id, "اختار الجودة المفضلة:", reply_markup=markup)
         else:
             # للصوت أو المنصات الأخرى، تحميل مباشر بأفضل جودة
             start_download(call.message, f_type, "best", url_id)
@@ -176,10 +175,9 @@ def start_download(message, f_type, res, url_id):
     for current_res in qualities:
         if success: break
         
-        # إعدادات الصيغة لضمان الحصول على ملف مدموج
+        # التعديل هنا: السطر ده بيجرب كل الاحتمالات عشان يحل مشكلة يوتيوب
         if f_type == "vid":
-            # السطر السحري اللي بيحل مشاكل يوتيوب
-            fmt = f"best[height<={current_res}][ext=mp4]/best[height<={current_res}]/best"
+            fmt = f"bestvideo[height<={current_res}][ext=mp4]+bestaudio[ext=m4a]/best[height<={current_res}][ext=mp4]/best"
         else:
             fmt = "bestaudio/best"
 
@@ -189,7 +187,7 @@ def start_download(message, f_type, res, url_id):
             'cookiefile': cookie_file,
             'quiet': True,
             'no_warnings': True,
-            'nocheckcertificate': True, # إضافة لتجاوز مشاكل الشهادات
+            'nocheckcertificate': True, 
             'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
 
@@ -210,8 +208,9 @@ def start_download(message, f_type, res, url_id):
                     else: bot.send_audio(chat_id, f)
                 os.remove(filename)
                 bot.delete_message(chat_id, status_msg.message_id)
-        except:
-            continue # تجربة الجودة التالية إذا فشل الحالي
+        except Exception as e:
+            print(f"فشلت جودة {current_res}: {str(e)}")
+            continue # تجربة الجودة التالية
 
     if not success:
         bot.edit_message_text("❌ عذراً، فشل التحميل بجميع الجودات المتاحة.", chat_id, status_msg.message_id)
