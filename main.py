@@ -35,7 +35,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 url_storage = {} 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# --- [2] دوال قاعدة البيانات والـ VIP ---
+# --- [2] دوال قاعدة البيانات ---
 def register_user(message):
     user_data = {
         "user_id": str(message.from_user.id),
@@ -60,7 +60,7 @@ def is_vip(user_id):
         return False
     except: return False
 
-# --- [3] نظام الكوكيز ---
+# --- [3] نظام الكوكيز (تأكد من رفع x_cookies.txt) ---
 def get_cookie_for_url(url):
     cookie_name = None
     if "youtube" in url or "youtu.be" in url:
@@ -68,25 +68,26 @@ def get_cookie_for_url(url):
     elif "tiktok.com" in url:
         cookie_name = "tiktok_cookies.txt"
     elif "x.com" in url or "twitter.com" in url:
-        cookie_name = "x_cookies.txt" # تأكد من وجود الملف في GitHub
+        cookie_name = "x_cookies.txt" 
     
     if cookie_name:
         full_path = os.path.join(BASE_DIR, cookie_name)
-        if os.path.exists(full_path): return full_path
+        if os.path.exists(full_path):
+            return full_path
     return None
 
-# --- [4] دالة التحميل (تعديل لدعم تويتر والجودة العالية) ---
+# --- [4] دالة التحميل المعدلة ---
 def start_download(message, f_type, res, url_id):
     chat_id = message.chat.id
     url = url_storage.get(url_id)
     status_msg = bot.send_message(chat_id, "⏳ جاري المعالجة...")
     cookie = get_cookie_for_url(url)
     
-    # تنسيق الجودة: تيك توك بأعلى شيء، والباقي بتنسيق متوافق
+    # تنسيق الجودة
     if "youtube" in url or "youtu.be" in url:
         fmt = f"best[height<={res}][ext=mp4]/best[ext=mp4]/best"
     else:
-        # هنا السر: نطلب أفضل فيديو وأفضل صوت وندمجهم
+        # أعلى جودة لتيك توك وتويتر
         fmt = "bestvideo+bestaudio/best"
 
     opts = {
@@ -120,28 +121,36 @@ def start_download(message, f_type, res, url_id):
             
     except Exception as e:
         print(f"Error: {e}")
-        bot.edit_message_text(f"❌ فشل التحميل. تأكد أن الرابط يعمل وأن الفيديو ليس خاصاً.", chat_id, status_msg.message_id)
+        bot.edit_message_text(f"❌ فشل التحميل. تأكد من أن الرابط ليس لصور أو فيديو خاص.", chat_id, status_msg.message_id)
 
-# --- [5] استقبال الروابط ---
+# --- [5] استقبال الروابط ومعالجتها ---
 @bot.message_handler(commands=['start'])
 def welcome(message):
     register_user(message)
-    bot.reply_to(message, "أهلاً بك!\nالبوت يدعم يوتيوب (VIP)، تيك توك (أعلى جودة)، وتويتر (X).")
+    bot.reply_to(message, "مرحباً يا بطل! أرسل رابط تيك توك أو تويتر أو يوتيوب (للمشتركين).")
 
 @bot.message_handler(func=lambda m: m.text and m.text.startswith('http'))
 def handle_link(message):
     register_user(message)
     url = message.text
+
+    # تنظيف روابط تويتر (X) الغريبة
+    if "x.com/i/status/" in url:
+        url = url.replace("x.com/i/status/", "x.com/anyuser/status/")
+    elif "twitter.com/i/status/" in url:
+        url = url.replace("twitter.com/i/status/", "twitter.com/anyuser/status/")
+
     url_id = str(len(url_storage) + 1)
     url_storage[url_id] = url
 
-    # دعم تويتر (X) مع المنصات المجانية
+    # المنصات المجانية (تيك توك وتويتر)
     if any(p in url for p in ["tiktok.com", "instagram.com", "facebook.com", "x.com", "twitter.com"]):
         start_download(message, "vid", "best", url_id)
     
+    # يوتيوب (VIP)
     elif "youtube" in url or "youtu.be" in url:
         if not is_vip(message.from_user.id):
-            bot.reply_to(message, "⚠️ يوتيوب متاح للـ VIP فقط.")
+            bot.reply_to(message, "⚠️ يوتيوب متاح لمشتركي VIP فقط.")
             return
         markup = telebot.types.InlineKeyboardMarkup()
         markup.add(telebot.types.InlineKeyboardButton("🎬 فيديو", callback_data=f"t|v|{url_id}"),
