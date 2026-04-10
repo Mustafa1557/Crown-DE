@@ -5,34 +5,32 @@ import datetime
 from yt_dlp import YoutubeDL
 from supabase import create_client
 
-# --- [1] قراءة البيانات من متغيرات البيئة (Render) ---
+# --- [1] قراءة البيانات من متغيرات البيئة ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-# محاولة قراءة ADMIN_ID وتحويله لرقم، لو فشل نضع القيمة 0
 try:
     ADMIN_ID = int(os.getenv("MY_ID") or 0)
 except:
     ADMIN_ID = 0
 
-# تشغيل البوت والاتصال بسوبابيس
 bot = telebot.TeleBot(BOT_TOKEN)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 url_storage = {} 
 
-# --- [2] نظام الرسائل الجماعية (Broadcaster) ---
+# الحصول على المسار المباشر للمجلد الحالي (حل مشكلة رندر)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# --- [2] نظام الرسائل الجماعية ---
 @bot.message_handler(commands=['broadcast'])
 def broadcast_message(message):
-    # حماية: المطور فقط
     if message.from_user.id != ADMIN_ID:
         return
-
     text_to_send = message.text.replace("/broadcast", "").strip()
     if not text_to_send:
         bot.reply_to(message, "⚠️ اكتب الرسالة بعد الأمر.")
         return
-
     try:
         users = supabase.table("users").select("user_id").execute()
         count = 0
@@ -40,8 +38,7 @@ def broadcast_message(message):
             try:
                 bot.send_message(user['user_id'], text_to_send)
                 count += 1
-            except:
-                continue 
+            except: continue 
         bot.reply_to(message, f"✅ تم الإرسال إلى {count} مستخدم.")
     except Exception as e:
         bot.reply_to(message, f"❌ خطأ: {e}")
@@ -70,31 +67,38 @@ def is_vip(user_id):
                         return True
                     else:
                         supabase.table("users").update({"is_vip": False}).eq("user_id", str(user_id)).execute()
-                else:
-                    return True 
+                else: return True 
         return False
-    except:
-        return False
+    except: return False
 
-# --- [4] نظام الكوكيز ---
+# --- [4] نظام الكوكيز مع حل مشكلة المسارات ---
 def get_cookie_for_url(url):
+    cookie_name = None
     if "youtube" in url or "youtu.be" in url:
-        return random.choice(["youtube_cookies_1.txt", "youtube_cookies_2.txt"])
+        cookie_name = random.choice(["youtube_cookies_1.txt", "youtube_cookies_2.txt"])
+    elif "tiktok.com" in url:
+        cookie_name = "tiktok_cookies.txt"
     elif "instagram.com" in url:
-        return "ig_cookies.txt"
-    elif "x.com" in url or "twitter.com" in url:
-        return "x_cookies.txt"
+        cookie_name = "ig_cookies.txt"
     elif "facebook.com" in url or "fb.watch" in url:
-        return "fb_cookies.txt"
+        cookie_name = "fb_cookies.txt"
+    elif "x.com" in url or "twitter.com" in url:
+        cookie_name = "x_cookies.txt"
+    
+    if cookie_name:
+        full_path = os.path.join(BASE_DIR, cookie_name)
+        if os.path.exists(full_path):
+            return full_path
     return None
 
 # --- [5] دالة التحميل ---
-def start_download(message, f_type, res, url_id, is_direct=False):
+def start_download(message, f_type, res, url_id):
     chat_id = message.chat.id
     url = url_storage.get(url_id)
     status_msg = bot.send_message(chat_id, "⏳ جاري المعالجة...")
     cookie = get_cookie_for_url(url)
     
+    # اختيار الجودة والفرمتة
     if "youtube" in url or "youtu.be" in url:
         fmt = f"best[height<={res}][ext=mp4]/best[ext=mp4]/best"
     else:
@@ -102,36 +106,43 @@ def start_download(message, f_type, res, url_id, is_direct=False):
 
     opts = {
         'format': fmt,
-        'outtmpl': f'file_{chat_id}_{url_id}.%(ext)s',
+        'outtmpl': os.path.join(BASE_DIR, f'file_{chat_id}_{url_id}.%(ext)s'),
         'cookiefile': cookie,
         'nocheckcertificate': True,
         'quiet': True,
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'no_warnings': True,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
 
     try:
         with YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
+            
             if f_type == "aud":
                 new_name = filename.rsplit('.', 1)[0] + '.mp3'
                 os.rename(filename, new_name)
                 filename = new_name
 
             with open(filename, 'rb') as f:
-                if f_type == "vid": bot.send_video(chat_id, f)
-                else: bot.send_audio(chat_id, f)
+                if f_type == "vid":
+                    bot.send_video(chat_id, f, supports_streaming=True)
+                else:
+                    bot.send_audio(chat_id, f)
             
-            os.remove(filename)
+            if os.path.exists(filename):
+                os.remove(filename)
             bot.delete_message(chat_id, status_msg.message_id)
+            
     except Exception as e:
-        bot.edit_message_text(f"❌ فشل التحميل.", chat_id, status_msg.message_id)
+        print(f"Download Error: {e}")
+        bot.edit_message_text(f"❌ فشل التحميل. يرجى التأكد من الرابط أو المحاولة لاحقاً.", chat_id, status_msg.message_id)
 
 # --- [6] معالجة الروابط ---
 @bot.message_handler(commands=['start'])
 def welcome(message):
     register_user(message)
-    bot.reply_to(message, "أهلاً بك!\nالتحميل من تيك توك وإنستغرام مجاني.\nيوتيوب للـ VIP فقط.")
+    bot.reply_to(message, "أهلاً بك في بوت التحميل الذكي!\n\n✅ تيك توك، إنستغرام، فيسبوك: (مجاني)\n⭐ يوتيوب: (للمشتركين VIP فقط)\n\nأرسل الرابط المباشر للبدء.")
 
 @bot.message_handler(func=lambda m: m.text and m.text.startswith('http'))
 def handle_link(message):
@@ -140,16 +151,20 @@ def handle_link(message):
     url_id = str(len(url_storage) + 1)
     url_storage[url_id] = url
 
+    # المنصات المجانية
     if any(p in url for p in ["tiktok.com", "instagram.com", "facebook.com", "x.com", "twitter.com"]):
-        start_download(message, "vid", "best", url_id, is_direct=True)
+        start_download(message, "vid", "best", url_id)
+    
+    # يوتيوب (يحتاج VIP)
     elif "youtube" in url or "youtu.be" in url:
         if not is_vip(message.from_user.id):
-            bot.reply_to(message, "⚠️ يوتيوب متاح للـ VIP فقط.")
+            bot.reply_to(message, "⚠️ عذراً، التحميل من يوتيوب متاح فقط لمشتركي VIP.\nتواصل مع المطور للاشتراك.")
             return
+        
         markup = telebot.types.InlineKeyboardMarkup()
         markup.add(telebot.types.InlineKeyboardButton("🎬 فيديو", callback_data=f"t|v|{url_id}"),
-                   telebot.types.InlineKeyboardButton("🎵 صوت", callback_data=f"t|a|{url_id}"))
-        bot.send_message(message.chat.id, "اختر النوع:", reply_markup=markup)
+                   telebot.types.InlineKeyboardButton("🎵 صوت (MP3)", callback_data=f"t|a|{url_id}"))
+        bot.send_message(message.chat.id, "اختر نوع الملف المطلوب:", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
@@ -159,8 +174,9 @@ def callback_handler(call):
         if f_type == "v":
             markup = telebot.types.InlineKeyboardMarkup()
             markup.add(telebot.types.InlineKeyboardButton("720p", callback_data=f"q|720|{url_id}"),
-                       telebot.types.InlineKeyboardButton("480p", callback_data=f"q|480|{url_id}"))
-            bot.send_message(call.message.chat.id, "اختر الجودة:", reply_markup=markup)
+                       telebot.types.InlineKeyboardButton("480p", callback_data=f"q|480|{url_id}"),
+                       telebot.types.InlineKeyboardButton("360p", callback_data=f"q|360|{url_id}"))
+            bot.edit_message_text("اختر جودة الفيديو:", call.message.chat.id, call.message.message_id, reply_markup=markup)
         else:
             start_download(call.message, "aud", "best", url_id)
     elif data[0] == "q":
@@ -169,3 +185,4 @@ def callback_handler(call):
 
 if __name__ == "__main__":
     bot.infinity_polling()
+
