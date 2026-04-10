@@ -7,22 +7,20 @@ from flask import Flask
 from yt_dlp import YoutubeDL
 from supabase import create_client
 
-# --- [0] إعداد Flask لإعطاء إشارة Live لـ Render ---
+# --- [0] إعداد Flask لإبقاء البوت Live ---
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "I am alive! The Bot is Running."
+    return "Bot is alive and running!"
 
 def run_flask():
-    # ريندر بيستخدم بورت 10000 أو 8080 غالباً، 0.0.0.0 ضرورية
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port)
 
-# تشغيل السيرفر في خلفية الكود
 threading.Thread(target=run_flask).start()
 
-# --- [1] قراءة البيانات من متغيرات البيئة ---
+# --- [1] إعدادات البوت وقاعدة البيانات ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -37,28 +35,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 url_storage = {} 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# --- [2] نظام الرسائل الجماعية ---
-@bot.message_handler(commands=['broadcast'])
-def broadcast_message(message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    text_to_send = message.text.replace("/broadcast", "").strip()
-    if not text_to_send:
-        bot.reply_to(message, "⚠️ اكتب الرسالة بعد الأمر.")
-        return
-    try:
-        users = supabase.table("users").select("user_id").execute()
-        count = 0
-        for user in users.data:
-            try:
-                bot.send_message(user['user_id'], text_to_send)
-                count += 1
-            except: continue 
-        bot.reply_to(message, f"✅ تم الإرسال إلى {count} مستخدم.")
-    except Exception as e:
-        bot.reply_to(message, f"❌ خطأ: {e}")
-
-# --- [3] دوال قاعدة البيانات ---
+# --- [2] دوال قاعدة البيانات والـ VIP ---
 def register_user(message):
     user_data = {
         "user_id": str(message.from_user.id),
@@ -67,8 +44,7 @@ def register_user(message):
     }
     try:
         supabase.table("users").upsert(user_data, on_conflict="user_id").execute()
-    except Exception as e:
-        print(f"Database Error: {e}")
+    except: pass
 
 def is_vip(user_id):
     try:
@@ -78,40 +54,39 @@ def is_vip(user_id):
             if user['is_vip']:
                 if user['subscription_end']:
                     expiry = datetime.datetime.fromisoformat(user['subscription_end'].replace('Z', '+00:00'))
-                    if datetime.datetime.now(datetime.timezone.utc) < expiry:
-                        return True
-                    else:
-                        supabase.table("users").update({"is_vip": False}).eq("user_id", str(user_id)).execute()
+                    if datetime.datetime.now(datetime.timezone.utc) < expiry: return True
+                    else: supabase.table("users").update({"is_vip": False}).eq("user_id", str(user_id)).execute()
                 else: return True 
         return False
     except: return False
 
-# --- [4] نظام الكوكيز ---
+# --- [3] نظام الكوكيز ---
 def get_cookie_for_url(url):
     cookie_name = None
     if "youtube" in url or "youtu.be" in url:
         cookie_name = random.choice(["youtube_cookies_1.txt", "youtube_cookies_2.txt"])
     elif "tiktok.com" in url:
         cookie_name = "tiktok_cookies.txt"
-    elif "instagram.com" in url:
-        cookie_name = "ig_cookies.txt"
+    elif "x.com" in url or "twitter.com" in url:
+        cookie_name = "x_cookies.txt" # تأكد من وجود الملف في GitHub
     
     if cookie_name:
         full_path = os.path.join(BASE_DIR, cookie_name)
-        if os.path.exists(full_path):
-            return full_path
+        if os.path.exists(full_path): return full_path
     return None
 
-# --- [5] دالة التحميل المعدلة ---
+# --- [4] دالة التحميل (تعديل لدعم تويتر والجودة العالية) ---
 def start_download(message, f_type, res, url_id):
     chat_id = message.chat.id
     url = url_storage.get(url_id)
     status_msg = bot.send_message(chat_id, "⏳ جاري المعالجة...")
     cookie = get_cookie_for_url(url)
     
+    # تنسيق الجودة: تيك توك بأعلى شيء، والباقي بتنسيق متوافق
     if "youtube" in url or "youtu.be" in url:
         fmt = f"best[height<={res}][ext=mp4]/best[ext=mp4]/best"
     else:
+        # هنا السر: نطلب أفضل فيديو وأفضل صوت وندمجهم
         fmt = "bestvideo+bestaudio/best"
 
     opts = {
@@ -121,7 +96,7 @@ def start_download(message, f_type, res, url_id):
         'nocheckcertificate': True,
         'quiet': True,
         'no_warnings': True,
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
 
     try:
@@ -136,24 +111,22 @@ def start_download(message, f_type, res, url_id):
 
             with open(filename, 'rb') as f:
                 if f_type == "vid":
-                    # تم إزالة supports_streaming لتسريع الإرسال وتقليل الـ Timeout
                     bot.send_video(chat_id, f)
                 else:
                     bot.send_audio(chat_id, f)
             
-            if os.path.exists(filename):
-                os.remove(filename)
+            if os.path.exists(filename): os.remove(filename)
             bot.delete_message(chat_id, status_msg.message_id)
             
     except Exception as e:
-        print(f"Download Error: {e}")
-        bot.edit_message_text(f"❌ فشل التحميل. قد يكون الملف كبيراً جداً على السيرفر المجاني.", chat_id, status_msg.message_id)
+        print(f"Error: {e}")
+        bot.edit_message_text(f"❌ فشل التحميل. تأكد أن الرابط يعمل وأن الفيديو ليس خاصاً.", chat_id, status_msg.message_id)
 
-# --- [6] معالجة الروابط ---
+# --- [5] استقبال الروابط ---
 @bot.message_handler(commands=['start'])
 def welcome(message):
     register_user(message)
-    bot.reply_to(message, "أهلاً بك!\nالبوت شغال الآن على ريندر (Live) ✅\nأرسل الرابط للتحميل.")
+    bot.reply_to(message, "أهلاً بك!\nالبوت يدعم يوتيوب (VIP)، تيك توك (أعلى جودة)، وتويتر (X).")
 
 @bot.message_handler(func=lambda m: m.text and m.text.startswith('http'))
 def handle_link(message):
@@ -162,8 +135,10 @@ def handle_link(message):
     url_id = str(len(url_storage) + 1)
     url_storage[url_id] = url
 
+    # دعم تويتر (X) مع المنصات المجانية
     if any(p in url for p in ["tiktok.com", "instagram.com", "facebook.com", "x.com", "twitter.com"]):
         start_download(message, "vid", "best", url_id)
+    
     elif "youtube" in url or "youtu.be" in url:
         if not is_vip(message.from_user.id):
             bot.reply_to(message, "⚠️ يوتيوب متاح للـ VIP فقط.")
@@ -183,12 +158,10 @@ def callback_handler(call):
             markup.add(telebot.types.InlineKeyboardButton("720p", callback_data=f"q|720|{url_id}"),
                        telebot.types.InlineKeyboardButton("480p", callback_data=f"q|480|{url_id}"))
             bot.edit_message_text("اختر الجودة:", call.message.chat.id, call.message.message_id, reply_markup=markup)
-        else:
-            start_download(call.message, "aud", "best", url_id)
+        else: start_download(call.message, "aud", "best", url_id)
     elif data[0] == "q":
         res, url_id = data[1], data[2]
         start_download(call.message, "vid", res, url_id)
 
-if __name__ == "__main__":
-    bot.infinity_polling()
+bot.infinity_polling()
 
