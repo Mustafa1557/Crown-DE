@@ -2,3 +2,8 @@ pyTelegramBotAPI
 yt-dlp
 supabase
 flask
+pyTelegramBotAPI==4.14.0
+yt-dlp==2024.4.9
+Flask==3.0.0
+supabase==2.4.2
+requests==2.31.0
