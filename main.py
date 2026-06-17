@@ -2,6 +2,7 @@ import telebot
 import os
 import time
 import shutil
+import threading  # <-- تم إضافة الاستيراد الناقص هنا
 from flask import Flask, jsonify
 from yt_dlp import YoutubeDL
 from concurrent.futures import ThreadPoolExecutor
@@ -10,6 +11,7 @@ from datetime import datetime
 
 # --- [0] إعداد خادم الويب ---
 app = Flask('')
+
 @app.route('/')
 def home():
     return "خادم البوت يعمل بكفاءة عالية ✅"
@@ -20,15 +22,23 @@ def health():
 
 def run_flask():
     port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port)
+    # تشغيل Flask بدون الـ Reloader لضمان استقراره داخل الـ Thread
+    app.run(host='0.0.0.0', port=port, use_reloader=False)
 
+# تشغيل خادم الويب في الخلفية قبل بدء البوت
 threading.Thread(target=run_flask, daemon=True).start()
 
 # --- [1] إعدادات البوت و Supabase ---
 TOKEN = os.getenv("BOT_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))
+ADMIN_ID = os.getenv("ADMIN_ID", "123456789")
+
+# تحويل الـ ADMIN_ID إلى رقم بأمان لمنع الأخطاء في حال كان فارغاً
+try:
+    ADMIN_ID = int(ADMIN_ID)
+except ValueError:
+    ADMIN_ID = 123456789
 
 if not TOKEN or not SUPABASE_URL or not SUPABASE_KEY:
     raise ValueError("تأكد من تعبئة BOT_TOKEN, SUPABASE_URL, SUPABASE_KEY في المتغيرات البيئية")
@@ -188,12 +198,11 @@ def welcome(m):
     name = m.from_user.first_name or "بدون اسم"
 
     bot.reply_to(m, "مرحباً بك! أرسل رابط فيديو TikTok أو Facebook وسيتم تحميله فوراً. 🤖")
-
     notify_admin(f"👤 مستخدم جديد\nID: {m.chat.id}\nUsername: @{username}\nالاسم: {name}")
 
 @bot.message_handler(commands=['stats'])
 def stats(m):
-    if m.chat.id!= ADMIN_ID:
+    if m.chat.id != ADMIN_ID:
         return
     users = get_all_users()
     tiktok_cookie = "موجود" if os.path.exists(os.path.join(BASE_DIR, "tiktok_cookies.txt")) else "مفقود"
@@ -203,7 +212,7 @@ def stats(m):
 
 @bot.message_handler(commands=['broadcast'])
 def broadcast_cmd(m):
-    if m.chat.id!= ADMIN_ID:
+    if m.chat.id != ADMIN_ID:
         return
     text = m.text.replace("/broadcast", "").strip()
     if not text:
@@ -226,3 +235,4 @@ if __name__ == "__main__":
         log_event("⚠️ تحذير: FFmpeg غير مثبت. التحميل سيفشل")
     log_event("النظام يعمل الآن...")
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
+
