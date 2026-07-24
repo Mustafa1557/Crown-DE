@@ -1,16 +1,16 @@
-import telebot
 import os
 import time
 import shutil
 import threading
 import requests
+import telebot
 from flask import Flask, jsonify
 from yt_dlp import YoutubeDL
 from concurrent.futures import ThreadPoolExecutor
 from supabase import create_client, Client
 from datetime import datetime
 
-# --- [0] إعداد خادم الويب ---
+# --- [0] إعداد خادم الويب (Keep Alive) ---
 app = Flask('')
 
 @app.route('/')
@@ -23,9 +23,8 @@ def health():
 
 def run_flask():
     port = int(os.environ.get('PORT', 8080))
+    # تم إيقاف الـ debug وتجهيز Server مستقر
     app.run(host='0.0.0.0', port=port, use_reloader=False)
-
-threading.Thread(target=run_flask, daemon=True).start()
 
 # --- [1] إعدادات البوت و Supabase ---
 TOKEN = os.getenv("BOT_TOKEN")
@@ -39,7 +38,7 @@ except ValueError:
     ADMIN_ID = 123456789
 
 if not TOKEN or not SUPABASE_URL or not SUPABASE_KEY:
-    raise ValueError("تأكد من تعبئة BOT_TOKEN, SUPABASE_URL, SUPABASE_KEY في المتغيرات البيئية")
+    raise ValueError("⚠️ تأكد من تعبئة BOT_TOKEN, SUPABASE_URL, SUPABASE_KEY في المتغيرات البيئية (Environment Variables)")
 
 bot = telebot.TeleBot(TOKEN)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -83,11 +82,11 @@ def get_cookie_file(platform):
     return None
 
 def resolve_short_url(url):
-    """يحول الروابط القصيرة vt.tiktok.com و vm.tiktok.com و fb.watch للرابط الأصلي"""
+    """تحويل الروابط القصيرة للرابط الأصلي"""
     if any(x in url for x in ['vt.tiktok.com', 'vm.tiktok.com', 'fb.watch']):
         try:
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             }
             res = requests.get(url, headers=headers, allow_redirects=True, timeout=15)
             log_event(f"🔗 تم فك الرابط: {url} → {res.url}")
@@ -118,8 +117,9 @@ def download_video(url, chat_id, message_id, username):
 
     cookie_file = get_cookie_file(platform)
 
+    # صيغة مرنة تضمن التنزيل حتى بدون وجود FFmpeg
     ydl_opts = {
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        'format': 'best[ext=mp4]/best',
         'outtmpl': filename,
         'quiet': True,
         'no_warnings': True,
@@ -127,8 +127,8 @@ def download_video(url, chat_id, message_id, username):
         'socket_timeout': 30,
         'retries': 3,
         'fragment_retries': 3,
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'merge_output_format': 'mp4'
+        'nocheckcertificate': True,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
 
     if cookie_file:
@@ -152,7 +152,6 @@ def download_video(url, chat_id, message_id, username):
         bot.delete_message(chat_id, message_id)
         log_event(f"✅ تم الإرسال لـ @{username}")
 
-        # إشعار نجاح مفصل للأدمن
         cookie_status = "مع كوكيز" if cookie_file else "بدون كوكيز"
         notify_admin(f"✅ نجح التحميل\nالمنصة: {platform}\nالمستخدم: @{username}\nالعنوان: {title}\nالحالة: {cookie_status}")
 
@@ -167,7 +166,7 @@ def download_video(url, chat_id, message_id, username):
             msg = "❌ الفيديو خاص أو الكوكي منتهي"
             reason = "فيديو خاص / كوكي منتهي"
         elif "confirm you're not a bot" in error or "blocked" in error:
-            msg = "❌ تيك توك حظر السيرفر. حدث الكوكي"
+            msg = "❌ تم حظر السيرفر من المنصة. حدث الكوكي"
             reason = "حظر IP / كوكي قديم"
         elif "unavailable" in error:
             msg = "❌ الفيديو محذوف أو غير متاح"
@@ -178,7 +177,6 @@ def download_video(url, chat_id, message_id, username):
 
         bot.edit_message_text(msg, chat_id, message_id)
 
-        # إشعار فشل مفصل للأدمن
         cookie_status = "مع كوكيز" if cookie_file else "بدون كوكيز"
         notify_admin(f"❌ فشل التحميل\nالمنصة: {platform}\nالمستخدم: @{username}\nالسبب: {reason}\nالحالة: {cookie_status}")
 
@@ -186,7 +184,7 @@ def download_video(url, chat_id, message_id, username):
         if os.path.exists(filename):
             try:
                 os.remove(filename)
-            except:
+            except Exception:
                 pass
 
 # --- [4] البث الجماعي ---
@@ -209,9 +207,9 @@ def send_broadcast(text, admin_chat_id):
             if e.error_code == 403:
                 try:
                     supabase.table("users").delete().eq("user_id", int(uid)).execute()
-                except:
+                except Exception:
                     pass
-        except:
+        except Exception:
             fail += 1
 
     bot.edit_message_text(
@@ -219,7 +217,7 @@ def send_broadcast(text, admin_chat_id):
         admin_chat_id, status.message_id
     )
 
-# --- [5] المستقبلات ---
+# --- [5] المستقبلات (Handlers) ---
 @bot.message_handler(commands=['start'])
 def welcome(m):
     save_user(m.chat.id, m.from_user.username)
@@ -231,7 +229,7 @@ def welcome(m):
 
 @bot.message_handler(commands=['stats'])
 def stats(m):
-    if m.chat.id!= ADMIN_ID:
+    if m.chat.id != ADMIN_ID:
         return
     users = get_all_users()
     tiktok_cookie = "موجود ✅" if os.path.exists(os.path.join(BASE_DIR, "tiktok_cookies.txt")) and os.path.getsize(os.path.join(BASE_DIR, "tiktok_cookies.txt")) > 0 else "مفقود ❌"
@@ -241,7 +239,7 @@ def stats(m):
 
 @bot.message_handler(commands=['broadcast'])
 def broadcast_cmd(m):
-    if m.chat.id!= ADMIN_ID:
+    if m.chat.id != ADMIN_ID:
         return
     text = m.text.replace("/broadcast", "").strip()
     if not text:
@@ -263,8 +261,20 @@ def handle_link(m):
 def fallback(m):
     bot.reply_to(m, "❌ الرابط غير مدعوم. ندعم TikTok و Facebook فقط.")
 
+# --- [6] التشغيل الرئيسي ---
 if __name__ == "__main__":
     if not shutil.which("ffmpeg"):
-        log_event("⚠️ تحذير: FFmpeg غير مثبت. التحميل سيفشل")
-    log_event("النظام يعمل الآن...")
-    bot.infinity_polling(timeout=20, long_polling_timeout=10)
+        log_event("⚠️ تحذير: FFmpeg غير مثبت على هذا السيرفر. قد تفشل بعض مقاطع الفيديو التي تتطلب دمج الصوت والكلب.")
+
+    # تشغيل Flask في thread منفصل قبل البوت
+    threading.Thread(target=run_flask, daemon=True).start()
+
+    log_event("🚀 البوت يعمل الآن ويستقبل الطلبات...")
+    
+    # تشغيل البوت مع إعادة المحاولة التلقائية عند حدوث مشاكل في الشبكة
+    while True:
+        try:
+            bot.infinity_polling(timeout=20, long_polling_timeout=10)
+        except Exception as e:
+            log_event(f"⚠️ انقطع الاتصال، يتم إعادة التشغيل خلال 5 ثوانٍ... الخطأ: {e}")
+            time.sleep(5)
