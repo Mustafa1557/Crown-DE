@@ -1,15 +1,17 @@
 import telebot
 import os
+import random
 import uuid
+from datetime import datetime, timezone
 import threading
 from flask import Flask
 from yt_dlp import YoutubeDL
 from supabase import create_client
 
-# --- [0] إعداد Flask لإبقاء البوت Live على Render ---
+# --- [0] إعداد Flask لإبقاء البوت Live ---
 app = Flask('')
 @app.route('/')
-def home(): return "TikTok Bot is online ✅"
+def home(): return "Bot is online ✅"
 
 def run_flask():
     port = int(os.environ.get('PORT', 8080))
@@ -22,13 +24,12 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 ADMIN_ID = int(os.getenv("ADMIN_ID", 0))
-
 bot = telebot.TeleBot(BOT_TOKEN)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 url_storage = {}
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# --- [2] تسجيل المستخدمين ---
+# --- [2] دوال VIP ---
 def register_or_update_user(message):
     try:
         user_data = {
@@ -40,29 +41,51 @@ def register_or_update_user(message):
     except Exception as e:
         print(f"Supabase Error: {e}")
 
-# --- [3] جلب ملف كوكيز تيك توك ---
-def get_tiktok_cookie():
-    cookie_path = os.path.join(BASE_DIR, "tiktok_cookies.txt")
-    if os.path.exists(cookie_path):
-        return cookie_path
-    else:
-        print("Warning: tiktok_cookies.txt not found")
-        return None
+def check_vip_status(user_id):
+    try:
+        response = supabase.table("users").select("is_vip, subscription_end").eq("user_id", str(user_id)).execute()
+        if response.data:
+            user = response.data[0]
+            if user['is_vip']:
+                if user['subscription_end']:
+                    expiry = datetime.fromisoformat(user['subscription_end'].replace('Z', '+00:00'))
+                    if datetime.now(timezone.utc) < expiry:
+                        return True
+                    else:
+                        supabase.table("users").update({"is_vip": False}).eq("user_id", str(user_id)).execute()
+                        return False
+                return True
+    except Exception as e:
+        print(f"VIP Check Error: {e}")
+    return False
 
-# --- [4] دالة التحميل والرفع ---
-def start_download(message, url_id):
+# --- [3] نظام الكوكيز الحذر ---
+def get_cookie_for_url(url):
+    cookie_name = None
+    if "tiktok.com" in url:
+        cookie_name = "tiktok_cookies.txt"
+
+    if cookie_name:
+        full_path = os.path.join(BASE_DIR, cookie_name)
+        if os.path.exists(full_path):
+            return full_path
+    return None
+
+# --- [4] دالة التحميل المرنة (تتجاوز خطأ الكوكيز) ---
+def start_download(message, f_type, res, url_id):
     chat_id = message.chat.id
     url = url_storage.get(url_id)
     if not url:
         bot.send_message(chat_id, "انتهت صلاحية الرابط، أرسله مرة ثانية.")
         return
 
-    status_msg = bot.send_message(chat_id, "🔍 جاري تجهيز الفيديو من تيك توك...")
-    cookie = get_tiktok_cookie()
+    status_msg = bot.send_message(chat_id, "🔍 جاري تجهيز طلبك...")
+    cookie = get_cookie_for_url(url)
 
-    opts = {
-        'format': 'best[ext=mp4]/bestvideo+bestaudio/best',
-        'outtmpl': os.path.join(BASE_DIR, f'tiktok_{chat_id}_{url_id}.%(ext)s'),
+    # إعداد خيارات التحميل الأساسية بدون كوكيز أولاً لمنع توقف البوت
+    base_opts = {
+        'format': 'best[ext=mp4]/best',
+        'outtmpl': os.path.join(BASE_DIR, f'file_{chat_id}_{url_id}.%(ext)s'),
         'nocheckcertificate': True,
         'quiet': True,
         'no_warnings': True,
@@ -72,21 +95,40 @@ def start_download(message, url_id):
         'extractor_args': {'tiktok': {'webpage_download': True}}
     }
 
-    if cookie:
-        opts['cookiefile'] = cookie
-
     filename = None
+    bot.edit_message_text("⏳ جاري التحميل... هذا ممكن ياخذ دقيقة", chat_id, status_msg.message_id)
+
+    # المحاولة 1: التنزيل المباشر بدون كوكيز
     try:
-        bot.edit_message_text("⏳ جاري التحميل...", chat_id, status_msg.message_id)
-        with YoutubeDL(opts) as ydl:
+        with YoutubeDL(base_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
+    except Exception as e1:
+        print(f"Direct download failed, trying cookies if available... Error: {e1}")
+        
+        # المحاولة 2: إذا فشل التنزيل المباشر وكان ملف الكوكيز موجوداً
+        if cookie:
+            try:
+                cookie_opts = base_opts.copy()
+                cookie_opts['cookiefile'] = cookie
+                with YoutubeDL(cookie_opts) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                    filename = ydl.prepare_filename(info)
+            except Exception as e2:
+                print(f"Cookie download also failed: {e2}")
 
+    # معالجة رفع الملف أو إظهار الخطأ
+    try:
+        if filename and os.path.exists(filename):
             bot.edit_message_text("📤 جاري الرفع لك...", chat_id, status_msg.message_id)
             with open(filename, 'rb') as f:
-                bot.send_video(chat_id, f, caption="تم التحميل بنجاح ✅")
-
+                if f_type == "vid":
+                    bot.send_video(chat_id, f, caption="تم بنجاح ✅")
+                else:
+                    bot.send_audio(chat_id, f, caption="تم بنجاح ✅")
             bot.delete_message(chat_id, status_msg.message_id)
+        else:
+            raise Exception("Unable to download video with or without cookies.")
 
     except Exception as e:
         error_text = str(e)
@@ -97,7 +139,7 @@ def start_download(message, url_id):
         if "File size" in error_text or "max_filesize" in error_text:
             user_error = "حجم الفيديو أكبر من 50MB، ما أقدر أرسله."
         else:
-            user_error = "تعذر تحميل الفيديو. تأكد أن الحساب ليس خاصاً وأن الرابط صحيح."
+            user_error = "تعذر التحميل. تأكد أن الرابط صحيح وعام وليس خاص."
 
         bot.edit_message_text(f"❌ {user_error}", chat_id, status_msg.message_id)
 
@@ -106,21 +148,20 @@ def start_download(message, url_id):
             os.remove(filename)
         url_storage.pop(url_id, None)
 
-# --- [5] استقبال روابط تيك توك فقط ---
+# --- [5] استقبال الروابط ومعالجتها ---
 @bot.message_handler(func=lambda m: m.text and "tiktok.com" in m.text)
-def handle_tiktok_link(message):
+def handle_link(message):
     register_or_update_user(message)
-    
+    url = message.text
+
     url_id = str(uuid.uuid4())[:8]
-    url_storage[url_id] = message.text
+    url_storage[url_id] = url
+    start_download(message, "vid", "best", url_id)
 
-    start_download(message, url_id)
-
-# استقبال باقي الرسائل غير روابط تيك توك
 @bot.message_handler(func=lambda m: True)
 def handle_other(message):
-    bot.reply_to(message, "أرسل رابط تيك توك فقط للتحميل 📥")
+    bot.reply_to(message, "أرسل رابط تيك توك للتحميل 📥")
 
 if __name__ == "__main__":
-    print("TikTok Bot Started")
+    print("Bot Started")
     bot.infinity_polling()
