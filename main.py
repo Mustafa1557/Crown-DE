@@ -1,280 +1,177 @@
-import os
-import time
-import shutil
-import threading
-import requests
 import telebot
-from flask import Flask, jsonify
+import os
+import random
+import uuid
+from datetime import datetime, timezone
+import threading
+from flask import Flask
 from yt_dlp import YoutubeDL
-from concurrent.futures import ThreadPoolExecutor
-from supabase import create_client, Client
-from datetime import datetime
+from supabase import create_client
 
-# --- [0] إعداد خادم الويب (Keep Alive) ---
+# --- [0] إعداد Flask لإبقاء البوت Live ---
 app = Flask('')
-
 @app.route('/')
-def home():
-    return "خادم البوت يعمل بكفاءة عالية ✅"
-
-@app.route('/health')
-def health():
-    return jsonify({"status": "ok", "time": datetime.now().isoformat()}), 200
+def home(): return "Bot is online ✅"
 
 def run_flask():
     port = int(os.environ.get('PORT', 8080))
-    # تم إيقاف الـ debug وتجهيز Server مستقر
-    app.run(host='0.0.0.0', port=port, use_reloader=False)
+    app.run(host='0.0.0.0', port=port)
 
-# --- [1] إعدادات البوت و Supabase ---
-TOKEN = os.getenv("BOT_TOKEN")
+threading.Thread(target=run_flask, daemon=True).start()
+
+# --- [1] إعدادات البوت وقاعدة البيانات ---
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-ADMIN_ID = os.getenv("ADMIN_ID", "123456789")
-
-try:
-    ADMIN_ID = int(ADMIN_ID)
-except ValueError:
-    ADMIN_ID = 123456789
-
-if not TOKEN or not SUPABASE_URL or not SUPABASE_KEY:
-    raise ValueError("⚠️ تأكد من تعبئة BOT_TOKEN, SUPABASE_URL, SUPABASE_KEY في المتغيرات البيئية (Environment Variables)")
-
-bot = telebot.TeleBot(TOKEN)
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+ADMIN_ID = int(os.getenv("ADMIN_ID", 0))
+bot = telebot.TeleBot(BOT_TOKEN)
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+url_storage = {}
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-executor = ThreadPoolExecutor(max_workers=4)
-
-# --- [2] دوال السيرفر وقاعدة البيانات ---
-def log_event(msg):
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
-
-def save_user(user_id, username):
+# --- [2] دوال VIP ---
+def register_or_update_user(message):
     try:
-        supabase.table("users").upsert({
-            "user_id": int(user_id),
-            "username": username or "بدون_يوزر"
-        }).execute()
-        log_event(f"➕ مستخدم محفوظ: @{username} ({user_id})")
+        user_data = {
+            "user_id": str(message.from_user.id),
+            "username": message.from_user.username or "Unknown",
+            "first_name": message.from_user.first_name or "User"
+        }
+        supabase.table("users").upsert(user_data, on_conflict="user_id").execute()
     except Exception as e:
-        log_event(f"❌ خطأ حفظ مستخدم: {e}")
+        print(f"Supabase Error: {e}")
 
-def get_all_users():
+def check_vip_status(user_id):
     try:
-        res = supabase.table("users").select("user_id").execute()
-        return [int(u['user_id']) for u in res.data]
+        response = supabase.table("users").select("is_vip, subscription_end").eq("user_id", str(user_id)).execute()
+        if response.data:
+            user = response.data[0]
+            if user['is_vip']:
+                if user['subscription_end']:
+                    expiry = datetime.fromisoformat(user['subscription_end'].replace('Z', '+00:00'))
+                    if datetime.now(timezone.utc) < expiry:
+                        return True
+                    else:
+                        supabase.table("users").update({"is_vip": False}).eq("user_id", str(user_id)).execute()
+                        return False
+                return True
     except Exception as e:
-        log_event(f"❌ خطأ جلب المستخدمين: {e}")
-        return []
+        print(f"VIP Check Error: {e}")
+    return False
 
-def get_cookie_file(platform):
-    """يجيب ملف الكوكي حسب المنصة"""
-    if platform == "TikTok":
-        cookie_path = os.path.join(BASE_DIR, "tiktok_cookies.txt")
-    elif platform == "Facebook":
-        cookie_path = os.path.join(BASE_DIR, "fb_cookies.txt")
-    else:
-        return None
+# --- [3] نظام الكوكيز ---
+def get_cookie_for_url(url):
+    cookie_name = None
+    if "youtube" in url or "youtu.be" in url:
+        cookie_name = random.choice(["youtube_cookies_1.txt", "youtube_cookies_2.txt"])
+    elif "tiktok.com" in url:
+        cookie_name = "tiktok_cookies.txt"
+    elif "x.com" in url or "twitter.com" in url:
+        cookie_name = "x_cookies.txt"
 
-    if os.path.exists(cookie_path) and os.path.getsize(cookie_path) > 0:
-        return cookie_path
+    if cookie_name:
+        full_path = os.path.join(BASE_DIR, cookie_name)
+        if os.path.exists(full_path):
+            return full_path
+        else:
+            print(f"Warning: Cookie file {cookie_name} not found")
     return None
 
-def resolve_short_url(url):
-    """تحويل الروابط القصيرة للرابط الأصلي"""
-    if any(x in url for x in ['vt.tiktok.com', 'vm.tiktok.com', 'fb.watch']):
-        try:
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            }
-            res = requests.get(url, headers=headers, allow_redirects=True, timeout=15)
-            log_event(f"🔗 تم فك الرابط: {url} → {res.url}")
-            return res.url
-        except Exception as e:
-            log_event(f"⚠️ فشل فك الرابط القصير: {e}")
-            return url
-    return url
-
-def notify_admin(text):
-    try:
-        bot.send_message(ADMIN_ID, f"🔔 إشعار نظام\n{text}")
-    except Exception as e:
-        log_event(f"❌ فشل إرسال إشعار للأدمن: {e}")
-
-# --- [3] دالة معالجة وتحميل الفيديو ---
-def download_video(url, chat_id, message_id, username):
-    unique_id = f"{chat_id}_{int(time.time())}"
-    filename = os.path.join(BASE_DIR, f'video_{unique_id}.mp4')
-
-    if 'tiktok.com' in url or 'vxtiktok.com' in url:
-        platform = "TikTok"
-    elif 'facebook.com' in url or 'fb.watch' in url:
-        platform = "Facebook"
-    else:
-        bot.edit_message_text("❌ المنصة غير مدعومة", chat_id, message_id)
+# --- [4] دالة التحميل النهائية ---
+def start_download(message, f_type, res, url_id):
+    chat_id = message.chat.id
+    url = url_storage.get(url_id)
+    if not url:
+        bot.send_message(chat_id, "انتهت صلاحية الرابط، أرسله مرة ثانية.")
         return
 
-    cookie_file = get_cookie_file(platform)
+    status_msg = bot.send_message(chat_id, "🔍 جاري تجهيز طلبك...")
+    cookie = get_cookie_for_url(url)
 
-    # صيغة مرنة تضمن التنزيل حتى بدون وجود FFmpeg
-    ydl_opts = {
-        'format': 'best[ext=mp4]/best',
-        'outtmpl': filename,
+    # صيغة يوتيوب بدون FFmpeg عشان يشتغل على Render
+    if "youtube" in url or "youtu.be" in url:
+        fmt = f"best[height<={res}][ext=mp4]/best[ext=mp4]/best"
+    else:
+        fmt = "bestvideo+bestaudio/best"
+
+    opts = {
+        'format': fmt,
+        'outtmpl': os.path.join(BASE_DIR, f'file_{chat_id}_{url_id}.%(ext)s'),
+        'cookiefile': cookie,
+        'nocheckcertificate': True,
         'quiet': True,
         'no_warnings': True,
-        'max_filesize': 49 * 1024 * 1024,
-        'socket_timeout': 30,
-        'retries': 3,
-        'fragment_retries': 3,
-        'nocheckcertificate': True,
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'max_filesize': 50 * 1024 * 1024, # حد تيليجرام 50MB
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'add_header': ['Accept-Language: ar-SA,ar;q=0.9,en-US;q=0.8,en;q=0.7'],
+        'extractor_args': {'tiktok': {'webpage_download': True}}
     }
 
-    if cookie_file:
-        ydl_opts['cookiefile'] = cookie_file
-
+    filename = None
     try:
-        log_event(f"📥 بدء تحميل {platform} لـ @{username}")
-        bot.edit_message_text(f"⏳ جاري سحب الفيديو من {platform}...", chat_id, message_id)
-
-        with YoutubeDL(ydl_opts) as ydl:
+        bot.edit_message_text("⏳ جاري التحميل... هذا ممكن ياخذ دقيقة", chat_id, status_msg.message_id)
+        with YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            title = info.get('title', 'بدون عنوان')[:50]
+            filename = ydl.prepare_filename(info)
 
-        bot.edit_message_text("📤 جاري الرفع إلى تليجرام...", chat_id, message_id)
+            if f_type == "aud":
+                new_name = filename.rsplit('.', 1)[0] + '.mp3'
+                os.rename(filename, new_name)
+                filename = new_name
 
-        caption = "✨ @CrownDL_bot"
+            bot.edit_message_text("📤 جاري الرفع لك...", chat_id, status_msg.message_id)
+            with open(filename, 'rb') as f:
+                if f_type == "vid":
+                    bot.send_video(chat_id, f, caption="تم بنجاح ✅")
+                else:
+                    bot.send_audio(chat_id, f, caption="تم بنجاح ✅")
 
-        with open(filename, 'rb') as video:
-            bot.send_video(chat_id, video, caption=caption)
-
-        bot.delete_message(chat_id, message_id)
-        log_event(f"✅ تم الإرسال لـ @{username}")
-
-        cookie_status = "مع كوكيز" if cookie_file else "بدون كوكيز"
-        notify_admin(f"✅ نجح التحميل\nالمنصة: {platform}\nالمستخدم: @{username}\nالعنوان: {title}\nالحالة: {cookie_status}")
+            bot.delete_message(chat_id, status_msg.message_id)
 
     except Exception as e:
-        error = str(e).lower()
-        log_event(f"❌ خطأ {platform} @{username}: {e}")
+        error_text = str(e)
+        print(f"Download Error: {error_text}")
+        if ADMIN_ID:
+            bot.send_message(ADMIN_ID, f"Error for user {chat_id}\nURL: {url}\n\n{error_text[:3000]}")
 
-        if "file size" in error or "too large" in error:
-            msg = "❌ حجم الفيديو أكبر من 50MB"
-            reason = "الحجم تجاوز حد تليجرام"
-        elif "private" in error or "login" in error:
-            msg = "❌ الفيديو خاص أو الكوكي منتهي"
-            reason = "فيديو خاص / كوكي منتهي"
-        elif "confirm you're not a bot" in error or "blocked" in error:
-            msg = "❌ تم حظر السيرفر من المنصة. حدث الكوكي"
-            reason = "حظر IP / كوكي قديم"
-        elif "unavailable" in error:
-            msg = "❌ الفيديو محذوف أو غير متاح"
-            reason = "الفيديو غير موجود"
+        if "File size" in error_text or "max_filesize" in error_text:
+            user_error = "حجم الفيديو أكبر من 50MB، ما أقدر أرسله. جرب جودة أقل."
+        elif "Sign in to confirm" in error_text or "cookies" in error_text:
+            user_error = "في مشكلة مؤقتة مع يوتيوب. جرّب بعد شوية أو أرسل رابط ثاني."
         else:
-            msg = "❌ فشل التحميل. جرب رابط آخر"
-            reason = str(e)[:100]
+            user_error = "تعذر التحميل. تأكد أن الرابط صحيح وعام وليس خاص."
 
-        bot.edit_message_text(msg, chat_id, message_id)
+        bot.edit_message_text(f"❌ {user_error}", chat_id, status_msg.message_id)
 
-        cookie_status = "مع كوكيز" if cookie_file else "بدون كوكيز"
-        notify_admin(f"❌ فشل التحميل\nالمنصة: {platform}\nالمستخدم: @{username}\nالسبب: {reason}\nالحالة: {cookie_status}")
+    finally: # هذا يضمن حذف الملف حتى لو صار خطأ
+        if filename and os.path.exists(filename):
+            os.remove(filename)
 
-    finally:
-        if os.path.exists(filename):
-            try:
-                os.remove(filename)
-            except Exception:
-                pass
+# --- [5] استقبال الروابط ومعالجتها ---
+@bot.message_handler(func=lambda m: m.text and m.text.startswith('http'))
+def handle_link(message):
+    register_or_update_user(message)
+    url = message.text
+    if "/i/status/" in url:
+        url = url.replace("/i/status/", "/user/status/")
 
-# --- [4] البث الجماعي ---
-def send_broadcast(text, admin_chat_id):
-    users = get_all_users()
-    if not users:
-        bot.send_message(admin_chat_id, "❌ لا يوجد مستخدمين مسجلين")
-        return
+    url_id = str(uuid.uuid4())[:8] # حل مشكلة التكرار
+    url_storage[url_id] = url
 
-    status = bot.send_message(admin_chat_id, f"📢 بدء الإرسال لـ {len(users)} مستخدم...")
-    success = fail = 0
+    # تيك توك، تويتر، انستا، فيسبوك: تحميل مباشر
+    if any(p in url for p in ["tiktok.com", "x.com", "twitter.com", "instagram.com", "facebook.com", "fb.watch"]):
+        start_download(message, "vid", "best", url_id)
 
-    for uid in users:
-        try:
-            bot.send_message(uid, text)
-            success += 1
-            time.sleep(0.05)
-        except telebot.apihelper.ApiTelegramException as e:
-            fail += 1
-            if e.error_code == 403:
-                try:
-                    supabase.table("users").delete().eq("user_id", int(uid)).execute()
-                except Exception:
-                    pass
-        except Exception:
-            fail += 1
+    # يوتيوب: لازم VIP
+    elif "youtube" in url or "youtu.be" in url:
+        if not check_vip_status(message.from_user.id):
+            bot.reply_to(message, "🔒 خدمة يوتيوب للمشتركين المميزين فقط.\nللاشتراك تواصل مع الدعم.")
+            return
+        start_download(message, "vid", "720", url_id)
 
-    bot.edit_message_text(
-        f"✅ اكتمل الإرسال الجماعي\n📊 الإحصائيات:\n- ناجح: {success}\n- فشل / حظر: {fail}",
-        admin_chat_id, status.message_id
-    )
+    else:
+        start_download(message, "vid", "best", url_id)
 
-# --- [5] المستقبلات (Handlers) ---
-@bot.message_handler(commands=['start'])
-def welcome(m):
-    save_user(m.chat.id, m.from_user.username)
-    username = m.from_user.username or f"User_{m.chat.id}"
-    name = m.from_user.first_name or "بدون اسم"
-
-    bot.reply_to(m, "مرحباً بك! أرسل رابط فيديو TikTok أو Facebook وسيتم تحميله فوراً. 🤖")
-    notify_admin(f"👤 مستخدم جديد\nID: {m.chat.id}\nUsername: @{username}\nالاسم: {name}")
-
-@bot.message_handler(commands=['stats'])
-def stats(m):
-    if m.chat.id != ADMIN_ID:
-        return
-    users = get_all_users()
-    tiktok_cookie = "موجود ✅" if os.path.exists(os.path.join(BASE_DIR, "tiktok_cookies.txt")) and os.path.getsize(os.path.join(BASE_DIR, "tiktok_cookies.txt")) > 0 else "مفقود ❌"
-    fb_cookie = "موجود ✅" if os.path.exists(os.path.join(BASE_DIR, "fb_cookies.txt")) and os.path.getsize(os.path.join(BASE_DIR, "fb_cookies.txt")) > 0 else "مفقود ❌"
-
-    bot.reply_to(m, f"📊 إحصائيات النظام:\n\n👥 المستخدمين: {len(users)}\n🍪 كوكيز TikTok: {tiktok_cookie}\n🍪 كوكيز Facebook: {fb_cookie}")
-
-@bot.message_handler(commands=['broadcast'])
-def broadcast_cmd(m):
-    if m.chat.id != ADMIN_ID:
-        return
-    text = m.text.replace("/broadcast", "").strip()
-    if not text:
-        bot.reply_to(m, "⚠️ اكتب نص الرسالة بعد الأمر\nمثال: `/broadcast تحديث جديد`", parse_mode="Markdown")
-        return
-    executor.submit(send_broadcast, text, m.chat.id)
-
-@bot.message_handler(func=lambda m: m.text and any(x in m.text for x in ['tiktok.com', 'vxtiktok.com', 'facebook.com', 'fb.watch']))
-def handle_link(m):
-    username = m.from_user.username or f"User_{m.chat.id}"
-    msg = bot.reply_to(m, "🔍 جاري فحص الرابط...")
-
-    original_url = m.text.strip()
-    resolved_url = resolve_short_url(original_url)
-
-    executor.submit(download_video, resolved_url, m.chat.id, msg.message_id, username)
-
-@bot.message_handler(func=lambda m: m.text and m.text.startswith('http') and not any(x in m.text for x in ['tiktok.com', 'vxtiktok.com', 'facebook.com', 'fb.watch']))
-def fallback(m):
-    bot.reply_to(m, "❌ الرابط غير مدعوم. ندعم TikTok و Facebook فقط.")
-
-# --- [6] التشغيل الرئيسي ---
 if __name__ == "__main__":
-    if not shutil.which("ffmpeg"):
-        log_event("⚠️ تحذير: FFmpeg غير مثبت على هذا السيرفر. قد تفشل بعض مقاطع الفيديو التي تتطلب دمج الصوت والكلب.")
-
-    # تشغيل Flask في thread منفصل قبل البوت
-    threading.Thread(target=run_flask, daemon=True).start()
-
-    log_event("🚀 البوت يعمل الآن ويستقبل الطلبات...")
-    
-    # تشغيل البوت مع إعادة المحاولة التلقائية عند حدوث مشاكل في الشبكة
-    while True:
-        try:
-            bot.infinity_polling(timeout=20, long_polling_timeout=10)
-        except Exception as e:
-            log_event(f"⚠️ انقطع الاتصال، يتم إعادة التشغيل خلال 5 ثوانٍ... الخطأ: {e}")
-            time.sleep(5)
+    print("Bot Started")
+    bot.infinity_polling()
